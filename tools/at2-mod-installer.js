@@ -25,6 +25,10 @@ const KIT_ROOT = path.resolve(__dirname, "..");      // корень мод-ки
 const SRC_MODS = path.join(KIT_ROOT, "mods");
 const TEMPLATE = path.join(SRC_MODS, "install", "index-template.html");
 
+// Паки 2.0 подключаются в этом порядке (ядро -> карты -> стволы -> модификаторы -> интерфейс).
+// demo-pack и другие паки можно добавить через --packs.
+const DEFAULT_PACKS = ["at2-core", "at2-campaign", "at2-weapons", "at2-modifiers", "at2-ui"];
+
 const MARK_BEGIN = "<!-- AT2MOD:BEGIN -->";
 const MARK_END = "<!-- AT2MOD:END -->";
 const MARK_GEN = "<!-- AT2MOD-GENERATED -->";
@@ -121,7 +125,9 @@ function install(o) {
     let packs = o.packs;
     if (!packs) {
         const dir = path.join(SRC_MODS, "packs");
-        packs = exists(dir) ? fs.readdirSync(dir).filter(f => f.endsWith(".js")).map(f => f.replace(/\.js$/, "")) : [];
+        const available = exists(dir) ? fs.readdirSync(dir).filter(f => f.endsWith(".js")).map(f => f.replace(/\.js$/, "")) : [];
+        packs = DEFAULT_PACKS.filter(p => available.includes(p));
+        if (!packs.length) packs = available;      // страховка: если набор 2.0 отсутствует — берём всё
     }
     for (const p of packs) {
         if (!exists(path.join(SRC_MODS, "packs", p + ".js"))) {

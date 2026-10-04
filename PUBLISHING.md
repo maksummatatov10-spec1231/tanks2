@@ -187,3 +187,18 @@ git ls-files | grep -Ei 'awesome_tanks_2\.js|sdk\.js|\(index\)|_anonymous|images
 * Userscript — самый чистый способ: не распространяется вообще ничего.
 * Хочешь распространять игру целиком или использовать её арт — только с
   письменного разрешения правообладателя.
+
+## Архив релиза
+
+```bash
+python3 tools/make-release.py          # release/awesome-tanks-2.0-mod.zip
+python3 tools/make-release.py --out /tmp/at2   # в другую папку
+```
+
+Сборщик кладёт в архив только мод: `start.py`, `start.bat`, `mods/`, `tools/`,
+`README.md`, `PUBLISHING.md`, `ANALYSIS.md`, `LICENSE`, `КАК-ИГРАТЬ.txt` и
+пустую папку `game/` с подсказкой. Файлы игры (`awesome_tanks_2.js`, атласы,
+`images/`, `sounds/`, `styles/`, `fonts/`, `scripts/`) **не попадают в архив**:
+сборщик сверяет список файлов со стоп-листом и падает с ошибкой, если что-то
+из этого просочилось. Архив самодостаточен для установки, но не содержит
+ни строки кода и ни одного файла правообладателей.

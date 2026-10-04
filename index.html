@@ -1,13 +1,17 @@
 <!doctype html>
 <!--
-  Локальный запуск Awesome Tanks 2.
+  Локальный запуск Awesome Tanks 2.0 (мод-кит).
 
   Это НЕ оригинальный файл (оригинал сохранён рядом под именем «(index)»).
   Отличия от оригинала:
     * убран <base href>, все пути считаются от корня этой папки;
     * не подключаются coolmath-скрипты и рекламный SDK (sdk.js / igroutka);
     * showBanner() и cmgGameEvent() — заглушки, чтобы врезки рекламы ничего не делали;
-    * перед игрой грузится mods/mod-loader.js (точка расширения для модов).
+    * перед игрой грузятся mods/mod-loader.js и паки 2.0 (см. ниже).
+
+  Порядок важен: сначала ядро, потом паки, в конце — сама игра.
+  Ядро перехватывает AT.SETTINGS и AT.LEVELS, поэтому паки успевают
+  дополнить их до того, как игра построит свои экраны и уровни.
 
   Запускать только через http-сервер (file:// не сработает — игра грузит
   атласы через XHR):  python3 -m http.server 8080
@@ -16,7 +20,7 @@
 
 <head>
   <meta charset="UTF-8">
-  <title>Awesome Tanks 2</title>
+  <title>Awesome Tanks 2.0</title>
   <meta name="HandheldFriendly" content="true">
   <meta name="viewport"
     content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, shrink-to-fit=no">
@@ -50,13 +54,17 @@
     window.cmgGameEvent = function () { };
   </script>
 
-  <!-- Мод-кит: правки подключаются к игре до её старта.
-       Настройки — внутри mods/mod-loader.js, свои паки — в mods/packs/. -->
+  <!-- 1. Ядро мод-кита: перехват данных игры, реестры, вторая валюта, команды MOD.* -->
   <script src="mods/mod-loader.js"></script>
 
-  <!-- Демо-пак: три новые карты + ребаланс. Убери строку — вернётся ванильная игра. -->
-  <script src="mods/packs/demo-pack.js"></script>
+  <!-- 2. Паки Awesome Tanks 2.0 -->
+  <script src="mods/packs/at2-core.js"></script>       <!-- физика с инерцией, ядра, экономика -->
+  <script src="mods/packs/at2-campaign.js"></script>   <!-- +15 новых карт к ванильным 15 -->
+  <script src="mods/packs/at2-weapons.js"></script>    <!-- 6 новых стволов (Z X C V B N) -->
+  <script src="mods/packs/at2-modifiers.js"></script>  <!-- 20 модификаторов за ядра -->
+  <script src="mods/packs/at2-ui.js"></script>         <!-- хаб-меню 2.0 и панель в бою -->
 
+  <!-- 3. Сама игра. Ни один её файл этот репозиторий не распространяет. -->
   <script src="awesome_tanks_2.js"></script>
 </body>
 
