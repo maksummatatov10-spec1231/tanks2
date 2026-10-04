@@ -207,11 +207,31 @@ AT.game = {
                                      beginFill: function () {}, endFill: function () {}, lineStyle: function () {},
                                      drawRoundedRect: function () {}, drawCircle: function () {}, moveTo: function () {},
                                      lineTo: function () {}, clear: function () {}, destroy: function () {} }; return g; },
-    image: function (x, y) { var i = { alpha: 1, visible: true, x: x || 0, y: y || 0, children: [],
+    image: function (x, y, key, frame) { var i = { alpha: 1, visible: true, x: x || 0, y: y || 0, angle: 0, children: [],
+                                    frameName: frame || null, __frame: frame || null, __tex: key || null,
                                     anchor: { set: function (ax, ay) { i.anchor.x = ax; i.anchor.y = ay; } },
                                     scale: { set: function (sx, sy) { i.scale.x = sx; i.scale.y = sy; }, x: 1, y: 1 },
                                     position: { set: function (px, py) { i.x = px; i.y = py; } },
+                                    loadTexture: function (k, f) { i.__tex = k; i.frameName = f; i.__frame = f; },
                                     addChild: function () {}, setFrame: function () {}, destroy: function () {} }; return i; },
+    button: function (x, y, key, cb, ctx, over, out, down, up) {
+        var b = { x: x || 0, y: y || 0, alpha: 1, visible: true, angle: 0, inputEnabled: true,
+                  __key: key, __frames: [over, out, down, up], __click: cb, __ctx: ctx,
+                  anchor: { set: function (ax, ay) { b.anchor.x = ax; b.anchor.y = ay; }, x: 0, y: 0 },
+                  scale: { x: 1, y: 1, set: function (sx, sy) { b.scale.x = sx; b.scale.y = sy; } },
+                  position: { set: function (px, py) { b.x = px; b.y = py; } },
+                  input: { useHandCursor: false, pointerOver: function () { return false; }, pointerDown: function () { return false; } },
+                  events: { onInputOver: { add: function (f) { b.__over = f; } },
+                            onInputOut: { add: function (f) { b.__out = f; } },
+                            onInputDown: { add: function (f) { b.__down = f; } },
+                            onInputUp: { add: function (f) { b.__up = f; } } },
+                  onInputDown: { add: function (f) { (b.__onDown = b.__onDown || []).push(f); } },
+                  onInputUp: { add: function (f) { (b.__onUp = b.__onUp || []).push(f); } },
+                  setFrames: function (o, ou, d, u) { b.__frames = [o, ou, d, u]; },
+                  destroy: function () {} };
+        (AT.game.__buttons = AT.game.__buttons || []).push(b);
+        return b;
+    },
     sprite: function (x, y) { var s = { x: x || 0, y: y || 0, width: 0, height: 0, alpha: 1, visible: true,
                                    hitArea: null, inputEnabled: false,
                                    events: { onInputOver: { add: function (f) { s.__over = f; } },
@@ -367,7 +387,12 @@ setTimeout(() => {
     hub.tab = 1; hub.refresh.call(hub);
     ok("вкладка 2.0 показывает 15 карт", cards() === 15, String(cards()));
     hub.tab = 2; hub.refresh.call(hub);
-    ok("арсенал показывает 6 стволов", hub.content.children.filter(c => c.gfx).length >= 6,
+    /* в арсенале 6 рядов-табличек (графика) и родные кнопки игры */
+    const plates = hub.content.children.filter(c => typeof c.beginFill === "function").length;
+    ok("арсенал показывает 6 стволов", plates === 6, String(plates));
+    ok("арсенал рисует родные иконки стволов и шкалы",
+        hub.content.children.some(c => c.__frame && /menu\/upgrades\/parts\/(minigun|shotgun|ricochet|flamethrower|cannon|shock|rockets|laser|railgun|mines)\.png$/.test(c.__frame)) &&
+        hub.content.children.some(c => c.__frame && /gauge_\d\.png$/.test(c.__frame)),
         String(hub.content.children.length));
     hub.tab = 3; hub.refresh.call(hub);
     ok("модификаторы листаются страницами", hub.content.children.length > 10, String(hub.content.children.length));
@@ -379,10 +404,17 @@ setTimeout(() => {
     hub.play.call(hub, 30, false);
     ok("закрытый уровень не запускается и объясняет", AT.game.__started.length === startedBefore + 1 &&
         /закрыт/i.test(hub.msgT.text), hub.msgT.text);
-    const d0 = AT.profile.current.game.difficulty;
-    hub.cycleDifficulty.call(hub);
-    ok("сложность переключается из хаба", AT.profile.current.game.difficulty !== d0 &&
-        /СЛОЖНОСТЬ/.test(hub.diffBtn.labelText.text), hub.diffBtn.labelText.text);
+    /* сложность — родными кнопками easy/medium/hard */
+    hub.setDifficulty.call(hub, 2);
+    ok("сложность переключается из хаба", AT.profile.current.game.difficulty === 2 &&
+        hub.diffBtns.length === 3 && hub.diffBtns[2].alpha === 1 && hub.diffBtns[0].alpha < 1,
+        String(AT.profile.current.game.difficulty));
+    const artFrames = (AT.game.__buttons || []).map(b => (b.__frames || []).join(" ")).join("|");
+    ok("хаб и бой используют родную графику игры",
+        /buttons\/easy_normal\.png/.test(artFrames) && /buttons\/buy_normal\.png/.test(artFrames) &&
+        /buttons\/menu_normal\.png/.test(artFrames) && /buttons\/stats_normal\.png/.test(artFrames) &&
+        /buttons\/x_normal\.png/.test(artFrames),
+        "кнопок: " + (AT.game.__buttons || []).length);
     hub.toggleHelp.call(hub);
     ok("справка открывается и закрывается", hub.overlay.visible === true);
     hub.toggleHelp.call(hub);
@@ -398,6 +430,11 @@ setTimeout(() => {
     ok("панель мода открывается по M", ui && ui.panel.visible === true && ui.panelT.visible === true);
     ok("в панели есть список активных", ui && /АКТИВНЫЕ/.test(ui.panelT.text), ui && ui.panelT.text.split("\n")[2]);
     ok("купленный ноуклип виден в панели", ui && /Ноуклип/.test(ui.panelT.text));
+    ok("у панели есть родной крестик закрытия", !!ui.closeBtn && ui.closeBtn.visible === true,
+        String(ui.closeBtn && ui.closeBtn.visible));
+    ui.closeBtn.__click();
+    ok("крестик закрывает панель", ui.panel.visible === false && ui.closeBtn.visible === false);
+    MOD.ui.panel();
     MOD.ui.panel();
     ok("панель закрывается повторным M", ui && ui.panel.visible === false);
     const slot = ui.slots[0];
@@ -406,7 +443,38 @@ setTimeout(() => {
     lvlState.shutdown.call(lvlState);
     ok("при выходе с уровня слой боя убирается", lvlState.__at2ui === null && lvlState.__at2layer === null);
 
-    section("9. Лицензионная гигиена");
+    section("9. Кадры родной графики, которые использует мод");
+    /* проверяем по атласам игры, что все имена кадров существуют
+       (атласы лежат локально и в git не попадают — тогда секция пропускается) */
+    const atlasFiles = [["menu/upgrades/parts.png", "images/menu/upgrades/parts.json"],
+                        ["game.png", "images/game.json"],
+                        ["menu/levels.png", "images/menu/levels.json"]];
+    const atlases = {};
+    let haveAtlases = 0;
+    atlasFiles.forEach(([key, file]) => {
+        if (fs.existsSync(file)) {
+            const json = JSON.parse(fs.readFileSync(file, "utf8"));
+            atlases[key] = new Set(Object.keys(json.frames || {}));
+            haveAtlases++;
+        }
+    });
+    if (haveAtlases === 0) {
+        console.log("  (атласы игры не найдены — проверка кадров пропущена)");
+    } else {
+        const src = fs.readFileSync(PACKS[PACKS.length - 1], "utf8");
+        const frameRe = /(?:menu\/upgrades\/parts|game)\/(?:[A-Za-z0-9_\/]+\.png)/g;
+        const used = new Set((src.match(frameRe) || []));
+        const missing = [];
+        used.forEach(f => {
+            const atlasKey = f.startsWith("game/") ? "game.png" : "menu/upgrades/parts.png";
+            const set = atlases[atlasKey];
+            if (set && !set.has(f)) missing.push(f);
+        });
+        ok("все кадры, которые рисует at2-ui, есть в атласах игры", missing.length === 0,
+            missing.join(", ") || ("проверено кадров: " + used.size));
+    }
+
+    section("10. Лицензионная гигиена");
     const files = [LOADER].concat(PACKS);
     let dirty = [];
     files.forEach(f => {

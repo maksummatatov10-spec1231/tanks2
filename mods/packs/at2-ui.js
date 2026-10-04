@@ -25,11 +25,18 @@
     if (!M) { console.warn("[at2-ui] нужен mod-loader.js"); return; }
 
     var FONT = 'Gunplay, Arial, Helvetica, sans-serif';
+    /* Палитра взята из родной графики игры:
+       зелёные таблички frame.png (#179037 / #0D8539), золото кнопок и денег (#FFB600). */
     var COL = {
-        accent: "#7ce7ff", gold: "#dbb400", dim: "#8b97a8", white: "#e8f2ff",
-        ok: "#9fffb0", bad: "#ff9f9f"
+        accent: "#ffb600", gold: "#ffb600", dim: "#a9c7a6", white: "#f2f7ee",
+        ok: "#9be08f", bad: "#ff9f9f"
     };
-    var N = { panel: 0x1b2130, dark: 0x131926, accent: 0x7ce7ff, dim: 0x4a5568, gold: 0xdbb400 };
+    var N = {
+        panel: 0x11662f, dark: 0x0a3d1c, accent: 0xffb600, dim: 0x2f7a46,
+        gold: 0xffb600, line: 0x179037, deep: 0x07230f
+    };
+    var ART = "menu/upgrades/parts.png";
+    var BTN = "menu/upgrades/parts/buttons/";
 
     /* ============================= УТИЛИТЫ ============================= */
 
@@ -122,6 +129,60 @@
         } catch (e) { return null; }
     }
 
+    /* Кнопка родной графикой игры (buy / upgrade / refill / play / menu / stats / easy / medium / hard).
+       Если графики нет в кэше — тихо возвращаем null, интерфейс не ломается. */
+    function artButton(game, group, x, y, base, cb, ctx, opt) {
+        opt = opt || {};
+        var b = null;
+        try {
+            b = game.make.button(x, y, ART, function () { if (cb) cb.call(ctx || null); }, null,
+                base + "_hover.png", base + "_normal.png", base + "_down.png", base + "_normal.png");
+        } catch (e) { b = null; }
+        if (!b) return null;
+        b.anchor.set(.5, .5);
+        var sc = opt.scale == null ? .5 : opt.scale;
+        b.scale.set(sc, sc);
+        if (opt.alpha != null) b.alpha = opt.alpha;
+        try {
+            var au = window.AT && window.AT.audio;
+            if (au && au.playButtonDown) b.onInputDown.add(au.playButtonDown);
+            if (au && au.playButtonUp) b.onInputUp.add(au.playButtonUp);
+        } catch (e) { }
+        group.add(b);
+        if (opt.caption) {
+            var t = txt(game, x, y + 14 * sc + 6, opt.caption, 10, COL.dim);
+            t.anchor.set(.5, 0);
+            group.add(t);
+            b.__caption = t;
+        }
+        return b;
+    }
+
+    /* Крестик закрытия — родные кадры x_hover / x_normal. */
+    function artClose(game, group, x, y, cb, ctx, opt) {
+        opt = opt || {};
+        var b = null;
+        try {
+            b = game.make.button(x, y, ART, function () { if (cb) cb.call(ctx || null); }, null,
+                BTN + "x_hover.png", BTN + "x_normal.png", BTN + "x_normal.png", BTN + "x_hover.png");
+        } catch (e) { b = null; }
+        if (!b) return null;
+        b.anchor.set(.5, .5);
+        var sc = opt.scale == null ? .5 : opt.scale;
+        b.scale.set(sc, sc);
+        group.add(b);
+        return b;
+    }
+
+    /* Картинка из родного атласа меню (галочка, шкала, иконка ствола и т.п.). */
+    function artIcon(game, group, x, y, frame, scale) {
+        var img = game.make.image(x, y, ART, frame);
+        img.anchor.set(.5, .5);
+        if (scale != null) img.scale.set(scale, scale);
+        group.add(img);
+        return img;
+    }
+
     /* Мягкое появление группы. */
     function fadeIn(game, obj, ms) {
         if (!obj) return;
@@ -197,10 +258,31 @@
             self.tabs.push(b);
         });
 
+        /* --- нижняя панель: всё родной графикой игры --- */
         var by = 512;
-        btn(g, this.root, 27, by, 196, 44, "МАГАЗИН АПГРЕЙДОВ", function () { go(self, "MenuUpgrades"); }, self, { size: 13, accent: true });
-        this.diffBtn = btn(g, this.root, 233, by, 168, 44, "СЛОЖНОСТЬ: " + DIFF_NAMES[diffIndex()], function () { self.cycleDifficulty(); }, self, { size: 13 });
-        btn(g, this.root, 411, by, 163, 44, "УПРАВЛЕНИЕ", function () { self.toggleHelp(); }, self, { size: 13 });
+        var lbl = txt(g, 14, by - 4, "СЛОЖНОСТЬ", 11, COL.dim);
+        this.root.add(lbl);
+
+        artButton(g, this.root, 52, by + 6, BTN + "menu", function () { self.go("MenuUpgrades"); }, self,
+            { scale: .46, caption: "апгрейды" });
+
+        this.diffBtns = [];
+        ["easy", "medium", "hard"].forEach(function (name, i) {
+            var b = artButton(g, self.root, 168 + i * 100, by + 6, BTN + name, function () { self.setDifficulty(i); }, self, { scale: .45 });
+            self.diffBtns.push(b);
+        });
+
+        artButton(g, this.root, 470, by + 6, BTN + "stats", function () { self.toggleHelp(); }, self,
+            { scale: .45, caption: "управление" });
+
+        this.soundIcon = artIcon(g, this.root, 530, by + 2, BTN + "sound_normal.png", .8);
+        this.soundState = artIcon(g, this.root, 545, by + 14, BTN + "on.png", .8);
+        this.musicIcon = artIcon(g, this.root, 572, by + 2, BTN + "music_normal.png", .8);
+        this.musicState = artIcon(g, this.root, 587, by + 14, BTN + "on.png", .8);
+        var sHit = game_makeHit(g, this.root, 516, by - 6, 32, 34, function () { self.toggleSound(); });
+        var mHit = game_makeHit(g, this.root, 558, by - 6, 32, 34, function () { self.toggleMusic(); });
+        this.soundHit = sHit;
+        this.musicHit = mHit;
 
         this.msgT = txt(g, 300, 566, "", 13, COL.dim);
         this.msgT.anchor.set(.5, 0);
@@ -249,18 +331,55 @@
             if (this.coresT.text && this.coresT.text !== line) pulse(this.game, this.coresT, 1.22);
             this.coresT.text = line;
         }
-        if (this.diffBtn) setBtnLabel(this.diffBtn, "СЛОЖНОСТЬ: " + DIFF_NAMES[diffIndex()]);
+        var d = diffIndex();
+        (this.diffBtns || []).forEach(function (b, i) {
+            if (!b) return;
+            b.alpha = i === d ? 1 : .45;
+        });
+        if (this.soundState) this.soundState.loadTexture(ART, BTN + (soundOn() ? "on.png" : "off.png"));
+        if (this.musicState) this.musicState.loadTexture(ART, BTN + (musicOn() ? "on.png" : "off.png"));
+        if (this.soundIcon) this.soundIcon.alpha = soundOn() ? 1 : .5;
+        if (this.musicIcon) this.musicIcon.alpha = musicOn() ? 1 : .5;
     };
 
-    Hub.prototype.cycleDifficulty = function () {
+    function soundOn() { try { return !!window.AT.profile.current.game.sound; } catch (e) { return true; } }
+    function musicOn() { try { return !!window.AT.profile.current.game.music; } catch (e) { return true; } }
+
+    Hub.prototype.setDifficulty = function (i) {
         try {
             var p = window.AT.profile.current.game;
-            p.difficulty = (diffIndex() + 1) % 3;
+            p.difficulty = i;
             window.AT.profile.save();
-            this.msg("сложность: " + DIFF_NAMES[diffIndex()], COL.ok);
-        } catch (e) { this.msg("сложность не изменилась", COL.bad); }
+            this.msg("сложность: " + DIFF_NAMES[i], COL.ok);
+        } catch (e) { this.msg("не удалось сохранить сложность", COL.bad); }
         this.updateHeader();
     };
+
+    Hub.prototype.toggleSound = function () {
+        var on = !soundOn();
+        try {
+            var p = window.AT.profile.current.game;
+            p.sound = on;
+            if (window.AT.audio && window.AT.audio.toggleSound) window.AT.audio.toggleSound(on);
+            window.AT.profile.save();
+        } catch (e) { }
+        this.msg(on ? "звук включён" : "звук выключен", COL.dim);
+        this.updateHeader();
+    };
+
+    Hub.prototype.toggleMusic = function () {
+        var on = !musicOn();
+        try {
+            var p = window.AT.profile.current.game;
+            p.music = on;
+            if (window.AT.audio && window.AT.audio.toggleMusic) window.AT.audio.toggleMusic(on);
+            window.AT.profile.save();
+        } catch (e) { }
+        this.msg(on ? "музыка включена" : "музыка выключена", COL.dim);
+        this.updateHeader();
+    };
+
+    Hub.prototype.go = function (key) { go(this, key); };
 
     Hub.prototype.refresh = function () {
         if (!this.content) return;
@@ -303,29 +422,32 @@
             card.position.set(x, y);
             this.content.add(card);
 
-            var frame = g.make.image(x + 50, y + 42, "menu/upgrades/parts.png", "menu/upgrades/parts/frame.png");
-            frame.scale.set(.82, .72);
-            frame.alpha = open ? 1 : .5;
-            this.content.add(frame);
+            /* фон карточки — родная рамка frame.png */
+            var frame = artIcon(g, this.content, x + 50, y + 30, "menu/upgrades/parts/frame.png", 1);
+            frame.scale.set(.92, .62);
+            frame.alpha = open ? 1 : .45;
 
-            var num = txt(g, x + 50, y + 34, String(n), 24, open ? COL.white : COL.dim);
+            var num = txt(g, x + 50, y + 26, String(n), 22, open ? COL.white : COL.dim);
             num.anchor.set(.5, .5);
             this.content.add(num);
 
             if (passed) {
-                var chk = g.make.image(x + 82, y + 8, "menu/upgrades/parts.png", "menu/upgrades/parts/check.png");
-                chk.scale.set(.28, .28);
-                chk.anchor.set(.5, .5);
-                this.content.add(chk);
+                var chk = artIcon(g, this.content, x + 80, y + 12, "menu/upgrades/parts/check.png", .26);
+                chk.angle = 8;
             }
 
-            var nm = txt(g, x + 8, y + 64, lvlName(n), 11, open ? COL.accent : COL.dim);
+            var nm = txt(g, x + 8, y + 56, lvlName(n), 10, open ? COL.accent : COL.dim);
             nm.wordWrap = true;
             nm.wordWrapWidth = 84;
             this.content.add(nm);
 
-            var info = txt(g, x + 8, y + 92, open ? (bestPoints(n) > 0 ? "лучший: " + bestPoints(n) : lvlTerrain(n)) : "закрыто", 9, COL.dim);
+            var info = txt(g, x + 8, y + 85, open ? (bestPoints(n) > 0 ? "лучший: " + bestPoints(n) : lvlTerrain(n)) : "закрыто", 9, COL.dim);
             this.content.add(info);
+
+            if (open) {
+                var pl = artIcon(g, this.content, x + 50, y + 96, BTN + "play_normal.png", .3);
+                pl.alpha = .95;
+            }
 
             (function (num2, isOpen, box) {
                 var hit = game_makeHit(g, self.content, x, y, 100, 108, function () { self.play(num2, isOpen); });
@@ -399,47 +521,53 @@
 
             var nm = txt(g, 108, y + 6, a.name + "   [" + a.key + "]", 15, a.owned ? COL.white : COL.accent);
             self.content.add(nm);
-            var lv = txt(g, 108, y + 28, "уровень: " + (a.owned ? (a.level + 1) + "/4" : "не куплен"), 11, COL.dim);
+            var lv = txt(g, 108, y + 28, a.owned ? "уровень " + (a.level + 1) + "/4" : "не куплен", 11, COL.dim);
             self.content.add(lv);
 
+            /* шкала уровня — родной gauge_0…5.png */
+            var gframe = "menu/upgrades/parts/gauge_" + Math.max(0, Math.min(5, a.owned ? a.level + 1 : 0)) + ".png";
+            var gauge = artIcon(g, self.content, 196, y + 33, gframe, .3);
+            gauge.alpha = a.owned ? 1 : .5;
+
             if (a.owned && a.maxAmmo !== Infinity) {
-                var am = txt(g, 108, y + 42, "патроны: " + a.ammo + " / " + a.maxAmmo, 11, COL.dim);
+                artIcon(g, self.content, 240, y + 34, "menu/upgrades/parts/ammo_small.png", .3);
+                var am = txt(g, 252, y + 28, a.ammo + " / " + a.maxAmmo, 11, COL.dim);
                 self.content.add(am);
             }
             if (!a.owned) {
-                var d = txt(g, 240, y + 10, a.desc || "", 11, COL.dim);
+                var d = txt(g, 240, y + 8, a.desc || "", 11, COL.dim);
                 d.wordWrap = true;
-                d.wordWrapWidth = 180;
+                d.wordWrapWidth = 150;
                 self.content.add(d);
             }
 
-            var bx = 26 + 548 - 128;
             if (!a.owned) {
-                var b1 = btn(g, self.content, bx, y + 8, 120, 40, "КУПИТЬ  $ " + moneyFmt(a.price), function () {
+                var buy = artButton(g, self.content, 505, y + 20, BTN + "buy", function () {
                     var r = M.arsenal.buy(a.id);
                     self.msg(r && r.ok ? ("куплено: " + a.name) : ("не вышло: " + ((r && r.reason) || "?")), r && r.ok ? COL.ok : COL.bad);
                     if (r && r.ok) pulse(g, icon, 1.25, 130);
                     self.refresh();
-                }, self, { size: 12, accent: true });
-                b1.gfx.alpha = M.money() >= a.price ? 1 : .5;
+                }, self, { scale: .42, caption: "$ " + moneyFmt(a.price) });
+                if (buy) buy.alpha = M.money() >= a.price ? 1 : .5;
             } else if (a.price != null) {
-                btn(g, self.content, bx, y + 8, 120, 40, "УЛУЧШИТЬ  $ " + moneyFmt(a.price), function () {
+                artButton(g, self.content, 505, y + 18, BTN + "upgrade", function () {
                     var r = M.arsenal.upgrade(a.id);
-                    self.msg(r && r.ok ? (a.name + ": уровень " + (M.arsenal.list().filter(function (q) { return q.id === a.id; })[0].level + 1)) : ("не вышло: " + ((r && r.reason) || "?")), r && r.ok ? COL.ok : COL.bad);
+                    var now = (M.arsenal.list().filter(function (q) { return q.id === a.id; })[0] || {}).level;
+                    self.msg(r && r.ok ? (a.name + ": уровень " + (now + 1)) : ("не вышло: " + ((r && r.reason) || "?")), r && r.ok ? COL.ok : COL.bad);
                     self.refresh();
-                }, self, { size: 12, accent: true });
+                }, self, { scale: .4, caption: "$ " + moneyFmt(a.price) });
             } else {
-                var mx = txt(g, bx + 60, y + 26, "МАКСИМУМ", 13, COL.ok);
+                var mx = txt(g, 505, y + 28, "МАКСИМУМ", 13, COL.ok);
                 mx.anchor.set(.5, .5);
                 self.content.add(mx);
             }
 
             if (a.owned && a.ammoPrice) {
-                btn(g, self.content, bx - 128, y + 8, 120, 40, "ПАТРОНЫ  $ " + moneyFmt(a.ammoPrice), function () {
+                artButton(g, self.content, 415, y + 18, BTN + "refill", function () {
                     var r = M.arsenal.buyAmmo(a.id);
-                    self.msg(r && r.ok ? ("патроны пополнены: " + (r.ammo || "") + " / " + (r.max || "")) : ("не вышло: " + ((r && r.reason) || "?")), r && r.ok ? COL.ok : COL.bad);
+                    self.msg(r && r.ok ? ("патроны: " + (r.ammo || "") + " / " + (r.max || "")) : ("не вышло: " + ((r && r.reason) || "?")), r && r.ok ? COL.ok : COL.bad);
                     self.refresh();
-                }, self, { size: 12 });
+                }, self, { scale: .4, caption: "$ " + moneyFmt(a.ammoPrice) });
             }
         });
 
@@ -486,15 +614,16 @@
             self.content.add(d);
 
             if (m.owned) {
-                var ok = txt(g, 26 + 548 - 74, y + 33, "КУПЛЕНО", 13, COL.ok);
-                ok.anchor.set(.5, .5);
+                artIcon(g, self.content, 505, y + 24, "menu/upgrades/parts/check.png", .32);
+                var ok = txt(g, 505, y + 46, "куплено", 10, COL.ok);
+                ok.anchor.set(.5, 0);
                 self.content.add(ok);
             } else {
-                btn(g, self.content, 26 + 548 - 148, y + 13, 140, 40, "КУПИТЬ  " + m.price + " \u042F", function () {
+                artButton(g, self.content, 505, y + 22, BTN + "buy", function () {
                     var r = M.mods.buy(m.id);
                     self.msg(r && r.ok ? ("куплено: " + m.name) : ("не вышло: " + ((r && r.reason) || "?")), r && r.ok ? COL.ok : COL.bad);
                     self.refresh();
-                }, self, { size: 12, accent: true });
+                }, self, { scale: .42, caption: m.price + " \u042F" });
             }
         });
 
@@ -619,7 +748,7 @@
         lvl.__at2layer = layer;
 
         // счётчик ядер
-        ui.coreBg = grafx(g, 168, 32, 8, 0x0d111a, .92, N.accent);
+        ui.coreBg = grafx(g, 150, 32, 8, N.deep, .9, N.accent);
         layer.add(ui.coreBg);
         ui.coreT = txt(g, 0, 0, coresLine() + "   (ядра)", 15, COL.accent);
         layer.add(ui.coreT);
@@ -644,7 +773,7 @@
         ui.items.push(ui.panelBtn);
 
         // сама панель
-        ui.panel = grafx(g, 420, 300, 10, 0x0d111a, .97, N.accent);
+        ui.panel = grafx(g, 420, 300, 10, N.deep, .97, N.accent);
         ui.panel.inputEnabled = true;
         ui.panel.hitArea = new Phaser.Rectangle(0, 0, 420, 300);
         ui.panel.visible = false;
@@ -654,6 +783,13 @@
         layer.add(ui.panelT);
 
         ui.items.push(ui.panel);
+
+        /* крестик закрытия панели — родной кадр x_normal */
+        ui.closeBtn = artClose(g, layer, 0, 0, function () { togglePanel(lvl); }, null, { scale: .55 });
+        if (ui.closeBtn) {
+            ui.closeBtn.visible = false;
+            ui.items.push(ui.closeBtn);
+        }
 
         layoutBattle(lvl);
 
@@ -769,6 +905,7 @@
         var pw = Math.min(440, w - 24);
         ui.panel.position.set((w - pw) / 2, 50);
         if (ui.panelT) ui.panelT.position.set((w - pw) / 2 + 14, 62);
+        if (ui.closeBtn) ui.closeBtn.position.set((w - pw) / 2 + 420 - 14, 50 + 16);
     }
 
     function hitMine(lvl, id) {
@@ -784,8 +921,16 @@
     function togglePanel(lvl) {
         var ui = lvl.__at2ui;
         if (!ui || !ui.panel) return;
-        ui.panel.visible = ui.panelT.visible = !ui.panel.visible;
-        if (ui.panel.visible) refreshPanel(lvl);
+        var on = !ui.panel.visible;
+        ui.panel.visible = ui.panelT.visible = on;
+        if (ui.closeBtn) ui.closeBtn.visible = on;
+        if (on) {
+            refreshPanel(lvl);
+            try {
+                ui.panel.alpha = .2;
+                lvl.game.add.tween(ui.panel).to({ alpha: 1 }, 160, Phaser.Easing.Linear.None, true);
+            } catch (e) { }
+        }
     }
 
     function refreshPanel(lvl) {
