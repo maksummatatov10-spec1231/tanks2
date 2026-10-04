@@ -80,10 +80,6 @@ def die(msg, code=1):
     sys.exit(code)
 
 
-def looks_like_game(folder):
-    return bool(folder) and os.path.isfile(os.path.join(folder, GAME_FILE))
-
-
 SKIP_DIRS = {".git", "node_modules", "__pycache__", "System Volume Information",
              "$RECYCLE.BIN", ".cache", ".local", "venv", ".venv", "mods", "tools"}
 
