@@ -1,0 +1,59 @@
+<!doctype html>
+<!--
+  Локальный запуск Awesome Tanks 2.
+
+  Это НЕ оригинальный файл (оригинал сохранён рядом под именем «(index)»).
+  Отличия от оригинала:
+    * убран <base href>, все пути считаются от корня этой папки;
+    * не подключаются coolmath-скрипты и рекламный SDK (sdk.js / igroutka);
+    * showBanner() и cmgGameEvent() — заглушки, чтобы врезки рекламы ничего не делали;
+    * перед игрой грузится mods/mod-loader.js (точка расширения для модов).
+
+  Запускать только через http-сервер (file:// не сработает — игра грузит
+  атласы через XHR):  python3 -m http.server 8080
+-->
+<html lang="ru">
+
+<head>
+  <meta charset="UTF-8">
+  <title>Awesome Tanks 2</title>
+  <meta name="HandheldFriendly" content="true">
+  <meta name="viewport"
+    content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, shrink-to-fit=no">
+  <meta name="apple-mobile-web-app-title" content="Awesome Tanks 2">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <link href="styles/main.css" rel="stylesheet">
+  <link href="styles/fonts.css" rel="stylesheet">
+</head>
+
+<body>
+  <p style="font-family: 'Gunplay'; position: absolute; pointer-events: none; opacity: 0">Font loader</p>
+
+  <script>
+    // Обвязка, которую игра ожидает от страницы-хоста.
+    var AT = {
+      SITE_LOCK_TARGET: ''   // заглушка экрана блокировки (он всё равно недостижим, см. ANALYSIS.md)
+    };
+
+    var WebFontConfig = {
+      classes: false,
+      timeout: 0,
+      active: function () { },
+      custom: {
+        families: ['Gunplay'],
+        urls: ['styles/fonts.css']
+      }
+    };
+
+    // Игра вызывает эти функции как глобальные. Здесь — пустышки.
+    window.showBanner = function () { };
+    window.cmgGameEvent = function () { };
+  </script>
+
+  <!-- Точка расширения: config мода задаётся внутри mods/mod-loader.js -->
+  <script src="mods/mod-loader.js"></script>
+
+  <script src="awesome_tanks_2.js"></script>
+</body>
+
+</html>
