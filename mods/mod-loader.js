@@ -11,6 +11,7 @@
  *     <script src="mods/packs/at2-weapons.js"></script>    <!-- новые пушки -->
  *     <script src="mods/packs/at2-modifiers.js"></script>  <!-- 20 модификаторов -->
  *     <script src="mods/packs/at2-ui.js"></script>         <!-- новый хаб-экран -->
+ *     <script src="mods/packs/at2-cheats.js"></script>     <!-- чит-меню (правый Shift) -->
  *
  * Что даёт ядро:
  *   * перехват AT.SETTINGS / AT.LEVELS (правки применяются к настоящим данным);
@@ -142,6 +143,7 @@
 
     var DEFAULT_MOD = {
         cores: 0,
+        cheats: null,
         ownedModifiers: [],
         cleared: {},
         campaignCleared: 0,
@@ -238,6 +240,11 @@
     MOD.addCores = function (n) {
         var d = modData(); n = Math.max(0, Math.round(n || 0));
         d.cores += n; d.stats.coresEarned += n; save(); emit("cores", d.cores);
+        return d.cores;
+    };
+    MOD.setCores = function (n) {
+        var d = modData();
+        d.cores = Math.max(0, Math.round(n || 0)); save(); emit("cores", d.cores);
         return d.cores;
     };
     MOD.spendCores = function (n) {
@@ -354,6 +361,7 @@
             "  MOD.grantModifier('noclip') / MOD.buyModifier('dash')",
             "  MOD.ownedModifierDefs()  — что куплено",
             "  MOD.god(true|false) / MOD.heal() / MOD.killAll()",
+            "  MOD.cheats.toggle()      — чит-меню (правый Shift)",
             "  MOD.listLevels() / MOD.playLevel(16)  — 30 уровней (15 ванильных + 15 новых)",
             "  MOD.toHub() / MOD.toMenu()",
             "  MOD.reset()               — стереть сохранение"

@@ -27,7 +27,7 @@ const TEMPLATE = path.join(SRC_MODS, "install", "index-template.html");
 
 // Паки 2.0 подключаются в этом порядке (ядро -> карты -> стволы -> модификаторы -> интерфейс).
 // demo-pack и другие паки можно добавить через --packs.
-const DEFAULT_PACKS = ["at2-core", "at2-campaign", "at2-weapons", "at2-modifiers", "at2-ui"];
+const DEFAULT_PACKS = ["at2-core", "at2-campaign", "at2-weapons", "at2-modifiers", "at2-ui", "at2-cheats"];
 
 const MARK_BEGIN = "<!-- AT2MOD:BEGIN -->";
 const MARK_END = "<!-- AT2MOD:END -->";

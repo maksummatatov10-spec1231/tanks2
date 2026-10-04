@@ -46,6 +46,7 @@ PACKS = [
     "mods/packs/at2-weapons.js",
     "mods/packs/at2-modifiers.js",
     "mods/packs/at2-ui.js",
+    "mods/packs/at2-cheats.js",
 ]
 
 INDEX_TEMPLATE = """<!doctype html>

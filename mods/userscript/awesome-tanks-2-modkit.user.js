@@ -22,6 +22,7 @@
 // @require      https://raw.githubusercontent.com/maksummatatov10-spec1231/tanks2/main/mods/packs/at2-weapons.js
 // @require      https://raw.githubusercontent.com/maksummatatov10-spec1231/tanks2/main/mods/packs/at2-modifiers.js
 // @require      https://raw.githubusercontent.com/maksummatatov10-spec1231/tanks2/main/mods/packs/at2-ui.js
+// @require      https://raw.githubusercontent.com/maksummatatov10-spec1231/tanks2/main/mods/packs/at2-cheats.js
 //
 // @match        *://*.coolmathgames.com/*
 // @match        *://*.coolmath.com/*

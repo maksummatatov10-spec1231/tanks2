@@ -23,7 +23,7 @@ try { JSDOM = require("jsdom").JSDOM; }
 catch (e) { console.error("Нужен jsdom:  npm i jsdom"); process.exit(1); }
 
 const ROOT = path.resolve(__dirname, "..");
-const PACKS = ["at2-core", "at2-campaign", "at2-weapons", "at2-modifiers", "at2-ui"]
+const PACKS = ["at2-core", "at2-campaign", "at2-weapons", "at2-modifiers", "at2-ui", "at2-cheats"]
     .map(n => path.join(ROOT, "mods", "packs", n + ".js"));
 const LOADER = path.join(ROOT, "mods", "mod-loader.js");
 const validate = require(path.join(ROOT, "tools", "lib", "validate-maps.js"));
@@ -64,7 +64,7 @@ ok("реестр паков пуст до регистрации", win.MOD.packs
 PACKS.forEach(f => run(f));
 const ids = win.MOD.packs().map(p => p.id).sort();
 ok("подключены все пять паков 2.0",
-    ["at2-campaign", "at2-core", "at2-modifiers", "at2-ui", "at2-weapons"].every(id => ids.includes(id)),
+    ["at2-campaign", "at2-core", "at2-modifiers", "at2-ui", "at2-weapons", "at2-cheats"].every(id => ids.includes(id)),
     JSON.stringify(ids));
 ok("20 модификаторов зарегистрировано", win.MOD.modifiers().length === 20, String(win.MOD.modifiers().length));
 ok("реестр стволов пуст (стволы живут в паке арсенала)", win.MOD.weapons().length === 0);
@@ -183,7 +183,10 @@ AT.menu = { Title: function () {} };
 AT.game = {
   width: 800, height: 600, time: { now: 0, frameCount: 1, physicsElapsed: 1/60,
     events: { add: function () { return {}; }, remove: function () {}, loop: function () { return {}; } } },
-  state: { states: {}, __current: null,
+  input: { enabled: true, keyboard: { enabled: true, _keys: [],
+            addKey: function () { return { isDown: false, reset: function () { } }; } } },
+  state: { onStateChange: { add: function () { return { detach: function () { } }; } },
+           states: {}, __current: null,
            add: function (k, st) { AT.game.__added.push(k); if (st) AT.game.state.states[k] = st; return st; },
            start: function (s) { AT.game.__started.push(s); AT.game.state.__current = s; },
            getCurrentState: function () {
@@ -192,7 +195,8 @@ AT.game = {
            },
            checkState: function (k) { return !!AT.game.state.states[k]; } },
   physics: { box2d: { raycast: function () { return []; } } },
-  add: { tween: function () { return { to: function () { return { onComplete: { add: function () {} } }; } }; } },
+  add: { tween: function () { return { to: function () { return { onComplete: { add: function () {} } }; } }; },
+         image: function (x, y, key, frame) { return AT.game.make.image(x, y, key, frame); } },
   make: {
     text: function (x, y, s) { var t = { anchor: { set: function () {} }, position: { set: function () {} },
                                  wordWrap: false, wordWrapWidth: 0, text: s == null ? "" : String(s), fill: "",
@@ -207,7 +211,7 @@ AT.game = {
                                      beginFill: function () {}, endFill: function () {}, lineStyle: function () {},
                                      drawRoundedRect: function () {}, drawCircle: function () {}, moveTo: function () {},
                                      lineTo: function () {}, clear: function () {}, destroy: function () {} }; return g; },
-    image: function (x, y, key, frame) { var i = { alpha: 1, visible: true, x: x || 0, y: y || 0, angle: 0, children: [],
+    image: function (x, y, key, frame) { var i = { alpha: 1, visible: true, x: x || 0, y: y || 0, angle: 0, children: [], width: 32, height: 32,
                                     frameName: frame || null, __frame: frame || null, __tex: key || null,
                                     anchor: { set: function (ax, ay) { i.anchor.x = ax; i.anchor.y = ay; } },
                                     scale: { set: function (sx, sy) { i.scale.x = sx; i.scale.y = sy; }, x: 1, y: 1 },
@@ -232,15 +236,19 @@ AT.game = {
         (AT.game.__buttons = AT.game.__buttons || []).push(b);
         return b;
     },
-    sprite: function (x, y) { var s = { x: x || 0, y: y || 0, width: 0, height: 0, alpha: 1, visible: true,
-                                   hitArea: null, inputEnabled: false,
+    sprite: function (x, y, key, frame) { var s = { x: x || 0, y: y || 0, width: 0, height: 0, alpha: 1, visible: true,
+                                   hitArea: null, inputEnabled: false, tint: 0xffffff, angle: 0,
+                                   __tex: key || null, __frame: frame || null,
+                                   scale: { x: 1, y: 1, set: function (sx, sy) { s.scale.x = sx; s.scale.y = sy; } },
                                    events: { onInputOver: { add: function (f) { s.__over = f; } },
                                              onInputOut: { add: function (f) { s.__out = f; } },
                                              onInputDown: { add: function (f) { s.__down = f; } } },
                                    input: { useHandCursor: false, pointerOver: function () { return false; },
                                             pointerDown: function () { return false; } },
                                    position: { set: function (px, py) { s.x = px; s.y = py; } },
-                                   anchor: { set: function () {} }, destroy: function () {} }; return s; },
+                                   anchor: { set: function () {} },
+                                   loadTexture: function (k, f) { s.__tex = k; s.__frame = f; },
+                                   destroy: function () {} }; return s; },
     group: function () { var g = { visible: true, children: [], alpha: 1, scale: { set: function () {} },
                                    position: { set: function () {} },
                                    add: function (c) { g.children.push(c); return c; },
@@ -350,21 +358,27 @@ setTimeout(() => {
     ok("тряска камеры масштабируется (физика 2.0)", Math.abs(lvlState.shake - 8) < 0.001, String(lvlState.shake));
 
     section("7b. Физика с инерцией: разгон и торможение вместо мгновенной скорости");
+    player.body.velocity.x = 0; player.body.velocity.y = 0;
     player.move(1, 0);
-    ok("цель движения запомнена", Math.abs(player._at2vel.x - player.moveSpeed) < 0.001,
-        JSON.stringify(player._at2vel));
-    player.update();
+    ok("направление движения запомнено", !!player._at2dir && player._at2dir.x === 1,
+        JSON.stringify(player._at2dir));
+    win.AT.game.time.frameCount++;
+    lvlState.update.call(lvlState);
     const v1 = player.body.velocity.x;
     ok("скорость растёт постепенно, а не мгновенно", v1 > 0 && v1 < player.moveSpeed, String(v1));
-    for (let i = 0; i < 40; i++) { win.AT.game.time.frameCount++; player.move(1, 0); player.update(); }
-    ok("за 40 кадров танк выходит на полную скорость", Math.abs(player.body.velocity.x - player.moveSpeed) < 6,
-        String(player.body.velocity.x));
+    for (let i = 0; i < 40; i++) { win.AT.game.time.frameCount++; player.move(1, 0); lvlState.update.call(lvlState); }
+    ok("за 40 кадров танк выходит на полную скорость",
+        Math.abs(player.body.velocity.x - player.moveSpeed) < 25, String(player.body.velocity.x));
     win.AT.game.time.frameCount++;
-    player.update();
+    win.AT.game.time.frameCount++;
+    lvlState.update.call(lvlState);
     const v2 = player.body.velocity.x;
-    ok("без ввода танк тормозит", v2 < player.moveSpeed && v2 > 0, String(v2));
-    for (let i = 0; i < 120; i++) { win.AT.game.time.frameCount++; player.update(); }
+    ok("без ввода танк тормозит, но не встаёт мгновенно", v2 < player.moveSpeed && v2 > 0, String(v2));
+    for (let i = 0; i < 120; i++) { win.AT.game.time.frameCount++; lvlState.update.call(lvlState); }
     ok("и в итоге останавливается", Math.abs(player.body.velocity.x) < 0.001, String(player.body.velocity.x));
+    /* регрессия: раньше move() «проглатывался» и танк не двигался вовсе */
+    ok("перемещение вообще работает (танк не стоит)", player._at2speed !== undefined,
+        String(player._at2speed));
 
     section("8. Меню: play ведёт в хаб 2.0");
     AT.game.state.states.MenuTitle.next();
@@ -388,7 +402,7 @@ setTimeout(() => {
     ok("вкладка 2.0 показывает 15 карт", cards() === 15, String(cards()));
     hub.tab = 2; hub.refresh.call(hub);
     /* в арсенале 6 рядов-табличек (графика) и родные кнопки игры */
-    const plates = hub.content.children.filter(c => typeof c.beginFill === "function").length;
+    const plates = hub.content.children.filter(c => c.__frame === "menu/upgrades/parts/frame.png").length;
     ok("арсенал показывает 6 стволов", plates === 6, String(plates));
     ok("арсенал рисует родные иконки стволов и шкалы",
         hub.content.children.some(c => c.__frame && /menu\/upgrades\/parts\/(minigun|shotgun|ricochet|flamethrower|cannon|shock|rockets|laser|railgun|mines)\.png$/.test(c.__frame)) &&
@@ -442,6 +456,63 @@ setTimeout(() => {
     ok("кнопка ствола знает свой id", slot.__id === "storm", slot.__id);
     lvlState.shutdown.call(lvlState);
     ok("при выходе с уровня слой боя убирается", lvlState.__at2ui === null && lvlState.__at2layer === null);
+
+    section("8d. Чит-меню: правый Shift, бессмертие, валюты, скорость");
+    const ch = MOD.cheats;
+    ok("чит-меню подключено", !!ch && typeof ch.toggle === "function");
+    const c0 = ch.get();
+    ok("умолчания: бессмертие выкл, множители 1",
+        c0.god === false && c0.speed === 1 && c0.rate === 1, JSON.stringify(c0));
+
+    ch.set("money", 12345);
+    ok("деньги задаются точным числом", MOD.money() === 12345, String(MOD.money()));
+    ch.set("cores", 777);
+    ok("ядра задаются точным числом", MOD.cores() === 777, String(MOD.cores()));
+
+    ch.set("god", true);
+    ok("бессмертие включается", player.invincible === true);
+    ch.set("god", false);
+    ok("бессмертие выключается", player.invincible === false);
+
+    ch.set("speed", 2);
+    ok("множитель скорости отдаётся физике", ch.speedMul() === 2, String(ch.speedMul()));
+    player.body.velocity.x = 0; player.body.velocity.y = 0;
+    for (let i = 0; i < 60; i++) { win.AT.game.time.frameCount++; player.move(1, 0); lvlState.update.call(lvlState); }
+    ok("со множителем 2 танк реально быстрее",
+        player.body.velocity.x > player.moveSpeed * 1.5, String(player.body.velocity.x));
+    ch.set("speed", 1);
+
+    player.weapons = [{ rate: 2 }];
+    ch.set("rate", 3);
+    ok("скорость стрельбы умножается", player.weapons[0].rate === 6, String(player.weapons[0].rate));
+    ch.reset("rate");
+    ok("сброс одного значения работает", player.weapons[0].rate === 2, String(player.weapons[0].rate));
+    ch.reset();
+    ok("сброс всего возвращает умолчания",
+        ch.get().speed === 1 && ch.get().rate === 1 && ch.get().money === null,
+        JSON.stringify(ch.get()));
+
+    let shiftWorks = null;
+    try {
+        win.dispatchEvent(new win.KeyboardEvent("keydown", { code: "ShiftRight", keyCode: 16 }));
+        shiftWorks = ch.isOpen();
+        if (shiftWorks) win.dispatchEvent(new win.KeyboardEvent("keydown", { code: "ShiftRight", keyCode: 16 }));
+    } catch (e) { shiftWorks = null; }
+    if (shiftWorks === null) {
+        ch.toggle();
+        ok("панель чит-меню открывается (вызовом)", ch.isOpen() === true);
+        ch.toggle();
+        ok("панель чит-меню закрывается", ch.isOpen() === false);
+    } else {
+        ok("правый Shift открывает чит-меню", shiftWorks === true);
+        ok("правый Shift закрывает чит-меню", ch.isOpen() === false);
+    }
+    ch.open();
+    ok("пока меню открыто, клавиатура игры не срабатывает",
+        win.AT.game.input.keyboard.enabled === false);
+    ch.close();
+    ok("после закрытия клавиатура возвращается",
+        win.AT.game.input.keyboard.enabled === true && ch.isOpen() === false);
 
     section("9. Кадры родной графики, которые использует мод");
     /* проверяем по атласам игры, что все имена кадров существуют

@@ -64,61 +64,66 @@
 
     var physProto = null;
 
+    /* Инерция 2.0.
+       Ваниль ставит скорость мгновенно: move() вызывается из Level.update ТОЛЬКО
+       когда нажата клавиша, а тормозит танк линейное демпфирование тела.
+       Поэтому нельзя «проглотить» move — танк просто встанет. Мы запоминаем
+       желаемое направление, а скорость ведём к цели в at2Motion(), который
+       вызывается из Level.update каждый кадр (см. installLevelPatches). */
     function installMotion(proto) {
         if (!proto || physProto === proto || !C.physics.enabled) return;
         physProto = proto;
 
-        // Запоминаем желаемую скорость; саму скорость меняем в update — так
-        // получается плавный разгон и торможение вместо «телепорта» скорости.
         M.wrap(proto, "move", function (orig) {
             return function (vx, vy) {
-                if (this.name !== "player" || !this.body || !isFinite(this.moveSpeed)) {
+                if (!C.physics.enabled || this.name !== "player" || !this.body || !isFinite(this.moveSpeed)) {
                     return orig.call(this, vx, vy);
                 }
-                this._at2vel = { x: vx * this.moveSpeed, y: vy * this.moveSpeed };
+                this._at2dir = { x: vx || 0, y: vy || 0 };
                 this._at2frame = this.game.time.frameCount;
-            };
-        });
-
-        M.wrap(proto, "update", function (orig) {
-            return function () {
-                var r = orig.apply(this, arguments);
-                if (this.name === "player") {
-                    try { at2Motion(this); } catch (e) { }
-                }
-                return r;
             };
         });
     }
 
-    function at2Motion(t) {
-        var b = t.body;
-        if (!b || !t.alive) return;
+    /* Вызывается каждый кадр уровня (в конце Level.update) для игрока. */
+    function at2Motion(lvl) {
+        var t = lvl && lvl.player;
+        if (!t || !t.body || t.name !== "player" || !t.alive) return;
+
         var cfg = C.physics;
+        if (!cfg.enabled) return;
+
+        var b = t.body;
         var dt = Math.min(t.game.time.physicsElapsed || 1 / 60, 1 / 30);
 
-        // Ввод считается «свежим», если move() вызвали в этом или прошлом кадре:
-        // так порядок вызовов move/update внутри кадра не ломает управление.
+        // Ввод свежий, если move() звали в этом или прошлом кадре.
         var fresh = (t.game.time.frameCount - (t._at2frame || -9)) <= 1;
-        var tgt = (fresh && t._at2vel) ? t._at2vel : { x: 0, y: 0 };
+        var dir = (fresh && t._at2dir) ? t._at2dir : { x: 0, y: 0 };
+        var moving = !!(dir.x || dir.y);
 
-        var tau = (tgt.x || tgt.y) ? cfg.accel : cfg.brake;
-        var k = 1 - Math.exp(-dt / tau);
-        b.velocity.x += (tgt.x - b.velocity.x) * k;
-        b.velocity.y += (tgt.y - b.velocity.y) * k;
+        var mul = (M.cheats && typeof M.cheats.speedMul === "function") ? M.cheats.speedMul() : 1;
+        var speed = t.moveSpeed * mul;
+        var tx = dir.x * speed, ty = dir.y * speed;
 
-        if (!fresh || !t._at2vel) {
-            if (Math.abs(b.velocity.x) < 1.2 && Math.abs(b.velocity.y) < 1.2) { b.velocity.x = 0; b.velocity.y = 0; }
+        var tau = moving ? cfg.accel : cfg.brake;
+        var k = 1 - Math.exp(-dt / Math.max(tau, 0.02));
+        b.velocity.x += (tx - b.velocity.x) * k;
+        b.velocity.y += (ty - b.velocity.y) * k;
+
+        if (!moving && Math.abs(b.velocity.x) < 2 && Math.abs(b.velocity.y) < 2) {
+            b.velocity.x = 0; b.velocity.y = 0;
         }
         t._at2speed = Math.sqrt(b.velocity.x * b.velocity.x + b.velocity.y * b.velocity.y);
     }
 
     function tunePlayerBody(player) {
-        if (!player || !player.body || player.__at2body) return;
-        player.__at2body = true;
+        if (!player || !player.body) return;
         try {
             // Лёгкая упругость: касание стены на скорости даёт короткий отскок.
             player.body.restitution = C.physics.restitution;
+            // Мгновенный «стоп» ванильного демпфирования заменяем своим
+            // торможением (cfg.brake), иначе инерция не читалась бы совсем.
+            if (C.physics.enabled) player.body.linearDamping = 0;
             // Немного демпфирования по углу — корпус не «звенит» после рывков.
             player.body.angularDamping = 4;
         } catch (e) { M.warn("не удалось настроить тело игрока:", e); }
@@ -184,6 +189,19 @@
                         tunePlayerBody(this.player);
                         M.emit("levelCreate", this);
                     } catch (e) { M.warn("levelCreate:", e); }
+                    return r;
+                };
+            });
+
+            /* Инерция считается здесь: игра обновляет управление внутри
+               Level.update, а физику шагает сразу после — значит, менять
+               скорость надо в конце update, иначе кадр потеряется. */
+            M.wrap(st, "update", function (orig) {
+                return function () {
+                    var r = orig.apply(this, arguments);
+                    if (!this.gamePaused) {
+                        try { at2Motion(this); } catch (e) { }
+                    }
                     return r;
                 };
             });

@@ -36,6 +36,7 @@
         gold: 0xffb600, line: 0x179037, deep: 0x07230f
     };
     var ART = "menu/upgrades/parts.png";
+    var LEVELS_ART = "menu/levels.png";
     var BTN = "menu/upgrades/parts/buttons/";
 
     /* ============================= УТИЛИТЫ ============================= */
@@ -47,7 +48,24 @@
         t.fontSize = size || 14;
         t.fill = color || COL.white;
         t.lineSpacing = 2;
+        /* обводка как в родном интерфейсе игры — текст читается на любой карте */
+        t.stroke = "#0a2a12";
+        t.strokeThickness = 3;
         return t;
+    }
+
+    /* Родная «табличка» игры: кадр frame.png (зелёная плитка со скруглением),
+       растянутый под нужный размер. Так панели выглядят как в самой игре. */
+    function plateArt(game, group, x, y, w, h, tint, alpha) {
+        var img = game.make.sprite(x, y, ART, "menu/upgrades/parts/frame.png");
+        img.anchor.set(0, 0);
+        img.width = w;
+        img.height = h;
+        if (img.scale) img.scale.set(w / 93, h / 79);
+        if (tint != null) img.tint = tint;
+        if (alpha != null) img.alpha = alpha;
+        group.add(img);
+        return img;
     }
 
     function grafx(game, w, h, radius, fill, alpha, line) {
@@ -76,7 +94,13 @@
         opt = opt || {};
         var fill = opt.fill == null ? N.panel : opt.fill;
         var line = opt.line == null ? (opt.accent ? N.accent : N.dim) : opt.line;
-        var gfx = grafx(game, w, h, opt.radius == null ? 7 : opt.radius, fill, .96, line);
+        var gfx;
+        if (opt.box === false) {
+            gfx = game.make.graphics(0, 0);
+            gfx.visible = false;
+        } else {
+            gfx = grafx(game, w, h, opt.radius == null ? 7 : opt.radius, fill, .96, line);
+        }
         gfx.position.set(x, y);
         group.add(gfx);
 
@@ -249,12 +273,21 @@
         this.tabs = [];
         var names = ["КАМПАНИЯ 1.0", "КАМПАНИЯ 2.0", "АРСЕНАЛ", "МОДИФИКАТОРЫ"];
         names.forEach(function (n, i) {
-            var b = btn(g, self.root, 27 + i * 138, 84, 132, 32, n, function () {
+            var bx = 27 + i * 138;
+            var plate = plateArt(g, self.root, bx, 84, 132, 34, i === 0 ? null : 0xbfc9bf, 1);
+            var label = txt(g, bx + 66, 93, n, 13, COL.white);
+            label.anchor.set(.5, 0);
+            self.root.add(label);
+            var b = btn(g, self.root, bx, 84, 132, 34, null, function () {
                 self.tab = i;
                 self.page = 0;
                 self.refresh();
-            }, self, { size: 13 });
+            }, self, { box: false });
+            b.gfx.visible = false;
             b.__tab = i;
+            b.__plate = plate;
+            b.labelText = label;
+            b.gfx = plate;              /* подсветку переключаем прозрачностью плитки */
             self.tabs.push(b);
         });
 
@@ -389,14 +422,8 @@
 
         (this.tabs || []).forEach(function (b, i) {
             var on = i === this.tab;
-            if (b.gfx) b.gfx.alpha = on ? 1 : .45;
-            b.gfx.clear();
-            b.gfx.beginFill(N.panel, .96);
-            b.gfx.drawRoundedRect(0, 0, 132, 32, 7);
-            b.gfx.endFill();
-            b.gfx.lineStyle(2, on ? N.accent : N.dim, 1);
-            b.gfx.drawRoundedRect(0, 0, 132, 32, 7);
-            if (b.labelText) b.labelText.fill = on ? COL.accent : COL.dim;
+            if (b.gfx) b.gfx.alpha = on ? 1 : .55;
+            if (b.labelText) b.labelText.fill = on ? COL.white : COL.dim;
         }, this);
 
         this.updateHeader();
@@ -409,67 +436,100 @@
 
     /* ------------------------------ карты ------------------------------ */
 
+    /* Сетка уровней родными плитками игры.
+       1–15 берут свою родную плитку (normal/active/disabled/<N>.png) — там
+       цифра нарисована в самой графике. Для 16–30 родной «пустой» плитки
+       frame.png рисуем номер сами. */
+    var LEVEL_TILE = "menu/levels.png";
+    var TILE_W = 100, TILE_H = 90, TILE_GAP_X = 12, TILE_GAP_Y = 8;
+
     Hub.prototype.buildLevels = function (from) {
         var g = this.game, self = this;
+        var cols = 5;
+        var gridW = cols * TILE_W + (cols - 1) * TILE_GAP_X;
+        var left = Math.round((600 - gridW) / 2);
+        var top = 116;
+
+        var native = (from === 1);
+        var nextOpen = unlocked() + 1;          // следующий непройденный уровень
+
         for (var i = 0; i < 15; i++) {
             var n = from + i;
-            var col = i % 5, row = Math.floor(i / 5);
-            var x = 26 + col * 112, y = 120 + row * 118;
+            var col = i % cols, row = Math.floor(i / cols);
+            var x = left + col * (TILE_W + TILE_GAP_X);
+            var y = top + row * (TILE_H + TILE_GAP_Y);
             var open = (n - 1) <= unlocked();
             var passed = bestPoints(n) > 0;
+            var isNext = open && !passed && n === nextOpen;
 
-            var card = grafx(g, 100, 108, 8, open ? N.panel : N.dark, .96, open ? N.dim : 0x2a3242);
-            card.position.set(x, y);
-            this.content.add(card);
+            var tile = null;
+            if (native) {
+                /* родная плитка: пройден — обычная, следующий — активная, закрыт — серый */
+                var kind = !open ? "disabled" : (isNext ? "active" : "normal");
+                tile = g.make.sprite(x + TILE_W / 2, y + TILE_H / 2, LEVEL_TILE,
+                    "menu/levels/buttons/" + kind + "/" + n + ".png");
+            } else {
+                /* новые карты: родная зелёная плитка + свой номер */
+                tile = g.make.sprite(x + TILE_W / 2, y + TILE_H / 2, ART, "menu/upgrades/parts/frame.png");
+                tile.scale.set(TILE_W / 93, TILE_H / 79);
+                if (!open) tile.tint = 0x7d8b7d;
+                else if (isNext) tile.tint = 0xffd76a;
+            }
+            tile.anchor.set(.5, .5);
+            tile.inputEnabled = false;
+            this.content.add(tile);
 
-            /* фон карточки — родная рамка frame.png */
-            var frame = artIcon(g, this.content, x + 50, y + 30, "menu/upgrades/parts/frame.png", 1);
-            frame.scale.set(.92, .62);
-            frame.alpha = open ? 1 : .45;
-
-            var num = txt(g, x + 50, y + 26, String(n), 22, open ? COL.white : COL.dim);
-            num.anchor.set(.5, .5);
-            this.content.add(num);
+            if (!native) {
+                var num = txt(g, x + TILE_W / 2, y + TILE_H / 2 - 13, String(n), 30,
+                    open ? (isNext ? "#7a3c00" : COL.white) : "#e6e0d4");
+                num.anchor.set(.5, 0);
+                this.content.add(num);
+            }
 
             if (passed) {
-                var chk = artIcon(g, this.content, x + 80, y + 12, "menu/upgrades/parts/check.png", .26);
-                chk.angle = 8;
+                artIcon(g, this.content, x + TILE_W - 14, y + 12, "menu/upgrades/parts/check.png", .28);
             }
 
-            var nm = txt(g, x + 8, y + 56, lvlName(n), 10, open ? COL.accent : COL.dim);
-            nm.wordWrap = true;
-            nm.wordWrapWidth = 84;
-            this.content.add(nm);
+            var capt = txt(g, x + TILE_W / 2, y + TILE_H + 2, lvlName(n), 10, open ? COL.gold : COL.dim);
+            capt.anchor.set(.5, 0);
+            capt.wordWrap = true;
+            capt.wordWrapWidth = TILE_W;
+            this.content.add(capt);
 
-            var info = txt(g, x + 8, y + 85, open ? (bestPoints(n) > 0 ? "лучший: " + bestPoints(n) : lvlTerrain(n)) : "закрыто", 9, COL.dim);
-            this.content.add(info);
+            var sub = txt(g, x + TILE_W / 2, y + TILE_H + 26, open
+                ? (passed ? "\u043b\u0443\u0447\u0448\u0438\u0439: " + bestPoints(n) : lvlTerrain(n))
+                : "\u0437\u0430\u043a\u0440\u044b\u0442\u043e", 9, COL.dim);
+            sub.anchor.set(.5, 0);
+            this.content.add(sub);
 
-            if (open) {
-                var pl = artIcon(g, this.content, x + 50, y + 96, BTN + "play_normal.png", .3);
-                pl.alpha = .95;
-            }
-
-            (function (num2, isOpen, box) {
-                var hit = game_makeHit(g, self.content, x, y, 100, 108, function () { self.play(num2, isOpen); });
+            (function (num2, isOpen, hitW, hitH, hx, hy, t) {
+                var hit = game_makeHit(g, self.content, hx, hy, hitW, hitH, function () { self.play(num2, isOpen); });
                 hit.__card = true;
                 hit.events.onInputOver.add(function () {
                     if (!isOpen) return;
-                    redrawBox(box, 100, 108, 8, N.panel, N.accent);
-                    g.add.tween(box.scale).to({ x: 1.04, y: 1.04 }, 120, Phaser.Easing.Quadratic.Out, true);
+                    t.alpha = .85;
+                    g.add.tween(t.scale).to({ x: t.scale.x * 1.06, y: t.scale.y * 1.06 }, 110,
+                        Phaser.Easing.Quadratic.Out, true);
                 });
                 hit.events.onInputOut.add(function () {
-                    redrawBox(box, 100, 108, 8, isOpen ? N.panel : N.dark, isOpen ? N.dim : 0x2a3242);
-                    g.add.tween(box.scale).to({ x: 1, y: 1 }, 140, Phaser.Easing.Quadratic.Out, true);
+                    if (!isOpen) return;
+                    t.alpha = 1;
+                    g.add.tween(t.scale).to({ x: self.__tileScale(num2).x, y: self.__tileScale(num2).y }, 130,
+                        Phaser.Easing.Quadratic.Out, true);
                 });
-            })(n, open, card);
+            })(n, open, TILE_W, TILE_H, x, y, tile);
         }
 
-        var info2 = txt(g, 300, 480, this.tab === 0
-            ? "Кампания 1.0 — 15 оригинальных карт игры, ничего не менялось."
-            : "Кампания 2.0 — 15 новых карт мода, поверх оригинальных; очки считаются отдельно.",
-            12, COL.dim);
-        info2.anchor.set(.5, 0);
-        this.content.add(info2);
+        var info = txt(g, 300, top + 3 * (TILE_H + TILE_GAP_Y) + 44, this.tab === 0
+            ? "\u041a\u0430\u043c\u043f\u0430\u043d\u0438\u044f 1.0 \u2014 15 \u043e\u0440\u0438\u0433\u0438\u043d\u0430\u043b\u044c\u043d\u044b\u0445 \u043a\u0430\u0440\u0442 \u0438\u0433\u0440\u044b."
+            : "\u041a\u0430\u043c\u043f\u0430\u043d\u0438\u044f 2.0 \u2014 15 \u043d\u043e\u0432\u044b\u0445 \u043a\u0430\u0440\u0442 (\u0443\u0440\u043e\u0432\u043d\u0438 16\u201330).",
+            11, COL.dim);
+        info.anchor.set(.5, 0);
+        this.content.add(info);
+    };
+
+    Hub.prototype.__tileScale = function (n) {
+        return (n <= 15) ? { x: TILE_W / 68, y: TILE_H / 60 } : { x: TILE_W / 93, y: TILE_H / 79 };
     };
 
     function game_makeHit(game, group, x, y, w, h, cb) {
@@ -507,10 +567,7 @@
         }
         list.forEach(function (a, i) {
             var y = 120 + i * 62;
-            var row = grafx(g, 548, 56, 8, a.owned ? 0x1a2434 : N.panel, .96, a.owned ? 0x3f7f5a : N.dim);
-            row.position.set(26, y);
-            row.scale.set(1, 1);
-            self.content.add(row);
+            var row = plateArt(g, self.content, 26, y, 548, 56, a.owned ? null : 0xd8ded8, .97);
 
             var icon = g.make.image(60, y + 28, "menu/upgrades/parts.png", "menu/upgrades/parts/" + (WEAPON_ICON[a.id] || "cannon") + ".png");
             icon.scale.set(.5, .5);
@@ -595,9 +652,7 @@
 
         slice.forEach(function (m, i) {
             var y = 118 + i * 72;
-            var row = grafx(g, 548, 66, 8, m.owned ? 0x1a2433 : N.panel, .96, m.owned ? 0x3f7f5a : N.dim);
-            row.position.set(26, y);
-            self.content.add(row);
+            var row = plateArt(g, self.content, 26, y, 548, 66, m.owned ? null : 0xd8ded8, .97);
 
             var badge = grafx(g, 34, 26, 6, N.dark, 1, m.kind === "active" ? N.accent : N.dim);
             badge.position.set(38, y + 20);
@@ -645,9 +700,15 @@
         if (this.overlay.visible) { this.overlay.visible = false; this.overlay.removeAll(true); return; }
         this.overlay.removeAll(true);
 
-        var bgp = grafx(g, 520, 400, 10, 0x0d111a, .97, N.accent);
-        bgp.position.set(40, 110);
+        var bgp = g.make.image(300, 300, "game.png", "game/alerts/abandon.png");
+        bgp.anchor.set(.5, .5);
+        bgp.scale.set(1.8, 1.75);
         this.overlay.add(bgp);
+        var shade = g.make.image(300, 300, "game.png", "game/alerts/overlay.png");
+        shade.anchor.set(.5, .5);
+        shade.scale.set(3, 3);
+        shade.alpha = .35;
+        this.overlay.add(shade);
 
         var lines = [
             "УПРАВЛЕНИЕ (2.0)",
@@ -662,17 +723,21 @@
             "I — ударная волна,  O — форсаж,  Y — берсерк.",
             "",
             "M — панель мода в бою: ядра, перезарядки, стволы.",
+            "Правый Shift — чит-меню: бессмертие, деньги, ядра,",
+            "скорость игрока и стрельбы (всё сбрасывается там же).",
+            "",
             "Ядра (\u042F) — вторая валюта: падают за убийства, боссов и",
             "зачистку уровня, тратятся на модификаторы.",
             "",
             "Всё сохраняется в сохранении игры, оригинальные карты не тронуты."
         ];
-        var t = txt(g, 60, 126, lines.join("\n"), 13, COL.white);
+        var t = txt(g, 78, 132, lines.join("\n"), 13, COL.white);
         this.overlay.add(t);
 
-        btn(g, this.overlay, 480, 452, 70, 40, "OK", function () {
+        var okBtn = artButton(g, this.overlay, 300, 486, BTN + "yes", function () {
             self.overlay.visible = false;
-        }, self, { size: 14, accent: true });
+        }, self, { scale: .5 });
+        if (!okBtn) btn(g, this.overlay, 265, 466, 70, 40, "OK", function () { self.overlay.visible = false; }, self, { size: 14, accent: true });
         this.overlay.visible = true;
     };
 
@@ -747,35 +812,44 @@
         var layer = g.add.group(g.stage);
         lvl.__at2layer = layer;
 
-        // счётчик ядер
-        ui.coreBg = grafx(g, 150, 32, 8, N.deep, .9, N.accent);
-        layer.add(ui.coreBg);
-        ui.coreT = txt(g, 0, 0, coresLine() + "   (ядра)", 15, COL.accent);
+        // счётчик ядер — родная зелёная табличка
+        ui.coreBg = plateArt(g, layer, 0, 0, 176, 34, null, .97);
+        ui.coreT = txt(g, 0, 0, coresLine() + "  \u042f\u0414\u0420\u0410", 15, COL.white);
         layer.add(ui.coreT);
 
         // быстрый выбор новых стволов
         ARS.forEach(function (a) {
-            var b = btn(g, layer, 0, 0, 34, 30, a.key, function () {
+            var plate = plateArt(g, layer, 0, 0, 36, 32, null, .97);
+            var b = btn(g, layer, 0, 0, 36, 32, a.key, function () {
                 var s = M.data().weapons[a.id];
                 if (!s || s.level < 0) {
-                    if (M.toast) M.toast("Ствол не куплен: " + a.name, COL.bad);
+                    if (M.toast) M.toast("\u0421\u0442\u0432\u043e\u043b \u043d\u0435 \u043a\u0443\u043f\u043b\u0435\u043d: " + a.name, COL.bad);
                     return;
                 }
                 if (lvl.changeWeapon) lvl.changeWeapon(idxOf(a.id));
-            }, null, { size: 14, line: N.dim });
+            }, null, { size: 15, box: false });
+            if (b.gfx) b.gfx.visible = false;
+            b.__plate = plate;
             b.__id = a.id;
             ui.slots.push(b);
             ui.items.push(b);
         });
 
         // кнопка панели мода
-        ui.panelBtn = btn(g, layer, 0, 0, 34, 30, "i", function () { togglePanel(lvl); }, null, { size: 15, accent: true });
+        var pPlate = plateArt(g, layer, 0, 0, 36, 32, 0xffd76a, .97);
+        ui.panelBtn = btn(g, layer, 0, 0, 36, 32, "i", function () { togglePanel(lvl); }, null,
+            { size: 15, box: false });
+        if (ui.panelBtn.gfx) ui.panelBtn.gfx.visible = false;
+        ui.panelBtn.__plate = pPlate;
         ui.items.push(ui.panelBtn);
 
         // сама панель
-        ui.panel = grafx(g, 420, 300, 10, N.deep, .97, N.accent);
+        ui.panel = g.make.image(0, 0, "game.png", "game/alerts/abandon.png");
+        ui.panel.anchor.set(0, 0);
+        ui.panel.width = 420; ui.panel.height = 316;
+        if (ui.panel.scale) ui.panel.scale.set(420 / 320, 316 / 252);
         ui.panel.inputEnabled = true;
-        ui.panel.hitArea = new Phaser.Rectangle(0, 0, 420, 300);
+        ui.panel.hitArea = new Phaser.Rectangle(0, 0, 420, 316);
         ui.panel.visible = false;
         layer.add(ui.panel);
         ui.panelT = txt(g, 0, 0, "", 13, COL.white);
@@ -865,7 +939,8 @@
             if (cur !== ui._cur) {
                 ui._cur = cur;
                 ui.slots.forEach(function (b, j) {
-                    redrawBox(b.gfx, 34, 30, 7, N.panel, j === cur ? N.accent : N.dim);
+                    var owned = (M.data().weapons[b.__id] || {}).level >= 0;
+                    if (b.__plate) b.__plate.tint = (j === cur) ? 0xffd76a : (owned ? 0xffffff : 0x9aa79a);
                 });
             }
         }
@@ -886,26 +961,27 @@
         if (!ui || !ui.coreBg) return;
         var w = lvl.game.width;
 
-        ui.coreBg.position.set(10, 10);
-        ui.coreT.position.set(22, 19);
+        ui.coreBg.position.set(10, 9);
+        ui.coreT.position.set(24, 18);
 
         var n = ui.slots.length + 1;
-        var x = w - 12 - n * 38;
+        var span = 40;
+        var x = w - 12 - n * span;
         ui.slots.forEach(function (b, i) {
-            var sx = x + i * 38;
-            b.position.set(sx, 10);
-            b.gfx.position.set(sx, 10);
-            if (b.labelText) b.labelText.position.set(sx + 17, 25);
+            var sx = x + i * span;
+            b.position.set(sx, 9);
+            if (b.__plate) b.__plate.position.set(sx, 9);
+            if (b.labelText) b.labelText.position.set(sx + 18, 24);
         });
-        var px = x + ui.slots.length * 38;
-        ui.panelBtn.position.set(px, 10);
-        ui.panelBtn.gfx.position.set(px, 10);
-        if (ui.panelBtn.labelText) ui.panelBtn.labelText.position.set(px + 17, 25);
+        var px = x + ui.slots.length * span;
+        ui.panelBtn.position.set(px, 9);
+        if (ui.panelBtn.__plate) ui.panelBtn.__plate.position.set(px, 9);
+        if (ui.panelBtn.labelText) ui.panelBtn.labelText.position.set(px + 18, 24);
 
         var pw = Math.min(440, w - 24);
         ui.panel.position.set((w - pw) / 2, 50);
-        if (ui.panelT) ui.panelT.position.set((w - pw) / 2 + 14, 62);
-        if (ui.closeBtn) ui.closeBtn.position.set((w - pw) / 2 + 420 - 14, 50 + 16);
+        if (ui.panelT) ui.panelT.position.set((w - pw) / 2 + 40, 76);
+        if (ui.closeBtn) ui.closeBtn.position.set((w - pw) / 2 + 14, 50 + 16);
     }
 
     function hitMine(lvl, id) {

@@ -32,7 +32,7 @@ LIST="$(python3 -c "import zipfile,sys;print('\n'.join(zipfile.ZipFile('$ZIP').n
 check "в архиве есть start.py" "$(echo "$LIST" | grep -c 'awesome-tanks-2.0/start.py$')" "1"
 check "в архиве есть start.bat" "$(echo "$LIST" | grep -c 'start.bat$')" "1"
 check "в архиве есть mods/mod-loader.js" "$(echo "$LIST" | grep -c 'mods/mod-loader.js$')" "1"
-check "в архиве 5 паков 2.0" "$(echo "$LIST" | grep -c 'mods/packs/at2-.*\.js$')" "5"
+check "в архиве 6 паков 2.0" "$(echo "$LIST" | grep -c 'mods/packs/at2-.*\.js$')" "6"
 
 GAME_INSIDE="$(echo "$LIST" | grep -Ec '(^|/)(images|sounds|styles|fonts|scripts)/|awesome_tanks_2\.js|game\.(png|json)|lock\.(png|json)')"
 check "файлов игры внутри нет" "$GAME_INSIDE" "0"
@@ -71,7 +71,7 @@ fi
 check "маркеры AT2MOD в index.html" "$(grep -c 'AT2MOD:BEGIN' "$GAME/index.html")" "1"
 check "лоадер подключён ровно один раз" "$(grep -cE '<script[^>]+mods/mod-loader\.js' "$GAME/index.html")" "1"
 check "бэкап index.html сделан" "$(ls "$GAME" | grep -c 'index.html.at2mod.bak')" "1"
-check "папка mods/ скопирована" "$(ls "$GAME/mods/packs" 2>/dev/null | grep -c '^at2-')" "5"
+check "папка mods/ скопирована" "$(ls "$GAME/mods/packs" 2>/dev/null | grep -c '^at2-')" "6"
 
 echo "── 4. повторный запуск (идемпотентность) ──────────────────"
 (cd "$KIT" && python3 start.py --check >"$OUT/install2.log" 2>&1) && ok "повторный --check прошёл" || bad "повторный --check упал"
