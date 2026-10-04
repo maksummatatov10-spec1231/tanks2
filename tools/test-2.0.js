@@ -526,8 +526,25 @@ setTimeout(() => {
         ok("правый Shift закрывает чит-меню", ch.isOpen() === false);
     }
     ch.open();
+    const overlay = win.document.getElementById("at2-cheats");
+    ok("окно чит-меню появилось в документе", !!overlay);
+    ok("окно открыто (не скрыто)", !overlay || overlay.style.display === "flex",
+        overlay ? String(overlay.style.display) : "нет окна");
+    const inputs = overlay ? overlay.querySelectorAll("input") : [];
+    const labels = overlay ? Array.from(overlay.querySelectorAll("div")).map(d => d.textContent) : [];
+    ok("в окне есть бессмертие, деньги, ядра и два ползунка",
+        inputs.length >= 5 && labels.some(t => /Бессмертие/.test(t)) &&
+        labels.some(t => /Деньги/.test(t)) && labels.some(t => /Ядра/.test(t)) &&
+        labels.some(t => /Скорость игрока/.test(t)) && labels.some(t => /Скорость стрельбы/.test(t)),
+        "полей: " + inputs.length);
+    ok("в окне нет спрайтов игры (только HTML)", overlay ? overlay.querySelectorAll("canvas, img").length === 0 : false);
+    ch.open();
     ok("пока меню открыто, клавиатура игры не срабатывает",
         win.AT.game.input.keyboard.enabled === false);
+    ch.close();
+    const overlay2 = win.document.getElementById("at2-cheats");
+    ok("окно чит-меню скрывается", !overlay2 || overlay2.style.display === "none",
+        overlay2 ? String(overlay2.style.display) : "нет окна");
     ch.close();
     ok("после закрытия клавиатура возвращается",
         win.AT.game.input.keyboard.enabled === true && ch.isOpen() === false);
