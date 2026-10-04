@@ -50,8 +50,12 @@
     window.cmgGameEvent = function () { };
   </script>
 
-  <!-- Точка расширения: config мода задаётся внутри mods/mod-loader.js -->
+  <!-- Мод-кит: правки подключаются к игре до её старта.
+       Настройки — внутри mods/mod-loader.js, свои паки — в mods/packs/. -->
   <script src="mods/mod-loader.js"></script>
+
+  <!-- Демо-пак: три новые карты + ребаланс. Убери строку — вернётся ванильная игра. -->
+  <script src="mods/packs/demo-pack.js"></script>
 
   <script src="awesome_tanks_2.js"></script>
 </body>

@@ -6,7 +6,30 @@
 * **[ANALYSIS.md](ANALYSIS.md)** — полный анализ: что за файлы, как устроен код,
   вся игровая математика (оружие, апгрейды, враги, экономика), формат уровней,
   найденные баги и список того, что можно менять.
-* **[mods/README.md](mods/README.md)** — практикум по моддингу с готовыми рецептами.
+* **[mods/README.md](mods/README.md)** — мод-кит: установка, формат паков, свои уровни.
+* **[PUBLISHING.md](PUBLISHING.md)** — как выложить мод так, чтобы ничего не нарушить
+  (что можно и нельзя класть в релиз, три схемы публикации, шаблоны).
+
+## Мод-кит
+
+Всё, что нужно для своей модификации и её публикации:
+
+| Файл | Назначение |
+|---|---|
+| `mods/mod-loader.js` | ядро: перехватывает `AT.SETTINGS` / `AT.LEVELS`, даёт команды `MOD.*` |
+| `mods/packs/demo-pack.js` | пример пака: 3 свои карты + ребаланс (подключён в `index.html`) |
+| `mods/install/index-template.html` | чистая страница запуска для установщика |
+| `mods/userscript/awesome-tanks-2-modkit.user.js` | версия для Tampermonkey (без установки файлов) |
+| `tools/at2-mod-installer.js` | установщик/деинсталлятор мода в копию игры |
+| `tools/test-modkit.js` | тесты ядра (нужен `npm i jsdom`) |
+
+```bash
+node tools/at2-mod-installer.js --game "/путь/к/копии/игры"   # поставить
+node tools/at2-mod-installer.js --game "..." --uninstall      # откатить
+```
+
+В консоли игры после запуска: `MOD.help()`. Паки пишутся как `MOD.registerPack({...})` —
+подробности и правила карт в [mods/README.md](mods/README.md).
 
 ## Запуск
 

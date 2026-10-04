@@ -1,116 +1,163 @@
-/* =============================================================================
- *  Awesome Tanks 2 — mod loader
+/*!
+ * Awesome Tanks 2 — Mod Kit / mod-loader v2
  * -----------------------------------------------------------------------------
- *  Подключать В index.html в этом порядке:
+ * Ядро мод-кита. Не содержит ни одного файла игры: только код, который
+ * подключается к уже установленной у игрока копии.
  *
- *      <script> var AT = { SITE_LOCK_TARGET: '' }; </script>
- *      <script src="mods/mod-loader.js"></script>     <-- здесь
- *      <script src="awesome_tanks_2.js"></script>
+ * Подключение (одна строка в index.html игры, перед <script src="awesome_tanks_2.js">):
+ *     <script src="mods/mod-loader.js"></script>
  *
- *  Зачем именно так: игра обращается к window.AT, который создаётся в HTML.
- *  Мы вешаем на этот объект перехватчики присваиваний AT.SETTINGS и AT.LEVELS,
- *  поэтому наши правки применяются к настоящим данным игры, а не к копии.
+ * Что делает: перехватывает данные игры (window.AT.SETTINGS, window.AT.LEVELS)
+ * и даёт пакам и консоли API (window.MOD) для правки баланса, карт и прогресса.
  *
- *  Настройки мода — в объекте CONFIG ниже. Готовые рецепты — в mods/README.md.
- *  Рантайм-команды: MOD.help()
+ * Лицензия: MIT (см. mods/LICENSE). Игра и её ассеты — собственность
+ * правообладателей и в этот кит не входят.
  * ========================================================================== */
 (function (global) {
     "use strict";
 
-    if (!global.AT) {
-        console.warn("[MOD] window.AT не найден: mod-loader.js должен идти после <script> с var AT = {...}");
-        global.AT = {};
-    }
-    var AT = global.AT;
+    var VERSION = "2.0.0";
 
-    /* ======================= ЧТО МЕНЯЕМ (КОНФИГ) ========================= */
+    /* ============================== КОНФИГ =============================== */
 
     var CONFIG = {
-        /* Функция(S) { ... } или null.
-         * S — настоящий объект AT.SETTINGS с ценами и лимитами боеприпасов.
-         * Пример: S.PRICES.armor = [200, 400, 800, 1600, 3200];            */
-        patchSettings: null,
+        /* Пакеты — файлы вида mods/packs/*.js. Можно перечислить путями: */
+        packs: [],
 
-        /* Функция(levels) { ... } или null.
-         * levels — массив window.AT.LEVELS: [ "Имя", "terrain", "строка", ... ]
-         * Можно переписать существующие карты или добавить свои (см. README). */
-        patchLevels: null,
+        /* Старая совместимость: одиночные хуки вместо паков */
+        patchSettings: null,   // function (S) { ... }
+        patchLevels: null,     // function (levels) { ... }
 
-        /* Заглушить рекламные врезки (window.showBanner) */
-        blockAds: true,
-
-        /* Автоматические подарки при загрузке игры (0 / false — выключено) */
-        startMoney: 0,      // например 250000
-        unlockLevels: 0,    // 15 = открыть все
-        maxWeapons: false,  // true = все пушки 5-го уровня + полный боезапас
-        maxUpgrades: false, // true = корпус/башня/обзор/скорость на максимум
-        godMode: false,     // true = бессмертие (обновляется каждый уровень)
-        difficulty: -1      // -1 = спросить, 0 = легко, 1 = средне, 2 = сложно
+        blockAds: true,        // заглушить window.showBanner (реклама порталов)
+        startMoney: 0,         // подарок при старте: денег
+        unlockLevels: 0,       // 15 = открыть все уровни
+        maxWeapons: false,     // все пушки 5 ур. + полный боезапас
+        maxUpgrades: false,    // корпус/башня/обзор/скорость на максимум
+        godMode: false,        // бессмертие
+        difficulty: -1         // -1 спросить, 0 легко, 1 средне, 2 сложно
     };
 
-    /* ==================== ПЕРЕХВАТ ДАННЫХ ИГРЫ =========================== */
+    /* ===================== ПЕРЕХВАТ ДАННЫХ ИГРЫ ========================== */
 
-    var _settings = null, _levels = null;
+    var settingsData = null, levelsData = null;
+    var packs = [];
+    var ready = false;
 
-    Object.defineProperty(AT, "SETTINGS", {
-        configurable: true,
-        get: function () { return _settings; },
-        set: function (v) {
-            _settings = v;
-            if (typeof CONFIG.patchSettings === "function") {
-                try { CONFIG.patchSettings(v); } catch (e) { console.error("[MOD] patchSettings:", e); }
+    function log() {
+        var a = ["[modkit]"].concat(Array.prototype.slice.call(arguments));
+        try { console.log.apply(console, a); } catch (e) { }
+    }
+
+    function hookData(target) {
+        if (!target || target.__modkitHooked) return target;
+        try { Object.defineProperty(target, "__modkitHooked", { value: true }); } catch (e) { }
+
+        Object.defineProperty(target, "SETTINGS", {
+            configurable: true,
+            get: function () { return settingsData; },
+            set: function (v) {
+                settingsData = v;
+                if (typeof CONFIG.patchSettings === "function") safe(CONFIG.patchSettings, v, "CONFIG.patchSettings");
+                for (var i = 0; i < packs.length; i++) if (packs[i].patchSettings) safe(packs[i].patchSettings, v, packs[i].id);
             }
-        }
-    });
+        });
 
-    Object.defineProperty(AT, "LEVELS", {
-        configurable: true,
-        get: function () { return _levels; },
-        set: function (v) {
-            _levels = v;
-            if (typeof CONFIG.patchLevels === "function") {
-                try { CONFIG.patchLevels(v); } catch (e) { console.error("[MOD] patchLevels:", e); }
+        Object.defineProperty(target, "LEVELS", {
+            configurable: true,
+            get: function () { return levelsData; },
+            set: function (v) {
+                levelsData = v;
+                if (typeof CONFIG.patchLevels === "function") safe(CONFIG.patchLevels, v, "CONFIG.patchLevels");
+                for (var i = 0; i < packs.length; i++) if (packs[i].patchLevels) safe(packs[i].patchLevels, v, packs[i].id);
             }
+        });
+
+        // Повторно применить паки, зарегистрированные до появления данных
+        for (var i = 0; i < packs.length; i++) {
+            if (settingsData && packs[i].patchSettings) safe(packs[i].patchSettings, settingsData, packs[i].id);
+            if (levelsData && packs[i].patchLevels) safe(packs[i].patchLevels, levelsData, packs[i].id);
         }
-    });
+        return target;
+    }
 
-    /* ========================= РАНТАЙМ-API =============================== */
+    function safe(fn, arg, who) {
+        try { fn(arg); } catch (e) { console.error("[modkit] ошибка в паке " + who + ":", e); }
+    }
 
-    var MOD = global.MOD = { CONFIG: CONFIG };
+    /* Случай A: страница уже создала window.AT (обычная локальная сборка). */
+    if (global.AT) hookData(global.AT);
+    /* Случай B: мы загрузились раньше страницы (userscript / document-start).
+     * Тогда вешаем аксессор на window.AT и ловим присваивание */
+    else {
+        try {
+            Object.defineProperty(global, "AT", {
+                configurable: true,
+                get: function () { return ATref; },
+                set: function (v) { ATref = v; hookData(v); }
+            });
+        } catch (e) { log("не удалось перехватить window.AT:", e); }
+    }
+    var ATref = global.AT;
+
+    /* Заглушка рекламы порталов: игра вызывает showBanner() как глобальную функцию.
+     * Ставим сразу при загрузке ядра и переустанавливаем при старте игры. */
+    function stubAds() {
+        if (!CONFIG.blockAds) return;
+        try { global.showBanner = function () { }; } catch (e) { }
+    }
+    stubAds();
+
+    /* ========================= РЕГИСТРАЦИЯ ПАКОВ ========================= */
+
+    function registerPack(pack) {
+        if (!pack || !pack.id) { console.warn("[modkit] у пака нет id, пропускаю"); return; }
+        for (var i = 0; i < packs.length; i++) if (packs[i].id === pack.id) {
+            log("пак " + pack.id + " уже зарегистрирован"); return;
+        }
+        packs.push(pack);
+        if (settingsData && pack.patchSettings) safe(pack.patchSettings, settingsData, pack.id);
+        if (levelsData && pack.patchLevels) safe(pack.patchLevels, levelsData, pack.id);
+        if (ready && pack.onReady) safe(pack.onReady, MOD, pack.id);
+        log("пак подключён: " + pack.id + (pack.version ? " v" + pack.version : ""));
+    }
+
+    /* ========================= РАНТАЙМ-API ============================== */
 
     var WEAPONS = ["minigun", "shotgun", "ricochet", "flamethrower", "cannon",
                    "shock", "rockets", "laser", "railgun", "mines"];
     var AMMO = ["shotgun", "ricochet", "flamethrower", "cannon", "shock",
                 "rockets", "laser", "railgun", "mines"];
 
-    function profile() {
-        return (global.AT && global.AT.profile) ? global.AT.profile.current : null;
-    }
-    function state() {
-        try { return global.AT.game.state.getCurrentState(); } catch (e) { return null; }
-    }
-    function save() {
-        try { global.AT.profile.save(); } catch (e) { }
-    }
+    function profile() { return (global.AT && global.AT.profile) ? global.AT.profile.current : null; }
+    function state() { try { return global.AT.game.state.getCurrentState(); } catch (e) { return null; } }
+    function save() { try { global.AT.profile.save(); } catch (e) { } }
 
-    MOD.profile = profile;   // MOD.profile().game.money  и т.п.
-    MOD.state = state;       // текущее состояние Phaser (уровень/меню)
-    MOD.settings = function () { return _settings; };
+    var MOD = global.MOD = {
+        version: VERSION,
+        CONFIG: CONFIG,
+        registerPack: registerPack,
+        packs: function () { return packs.slice(); },
+        profile: profile,
+        state: state,
+        settings: function () { return settingsData; },
+        levels: function () { return levelsData; }
+    };
 
-    /* --- деньги / прогресс ------------------------------------------------ */
+    /* --- прогресс и деньги --- */
     MOD.money = function (n) { var p = profile(); if (p) { p.game.money = n; save(); } };
     MOD.addMoney = function (n) { var p = profile(); if (p) { p.game.money += n; save(); } };
     MOD.setLevels = function (n) { var p = profile(); if (p) { p.game.levels = n; save(); } };
     MOD.unlockAll = function () { MOD.setLevels(15); };
     MOD.setDifficulty = function (d) { var p = profile(); if (p) { p.game.difficulty = d; save(); } };
-    MOD.points = function (level, value) {           // рекорд по уровню (1..15)
-        var p = profile(); if (p && level >= 1 && level <= 15) { p.game.points[level - 1] = value; save(); }
+    MOD.points = function (level, value) {
+        var p = profile();
+        if (p && level >= 1 && level <= 15) { p.game.points[level - 1] = value; save(); }
     };
 
-    /* --- оружие ----------------------------------------------------------- */
+    /* --- оружие и апгрейды --- */
     MOD.refillAmmo = function () {
         var p = profile(); if (!p) return;
-        var lim = (_settings && _settings.AMMO_LIMITS) || {};
+        var lim = (settingsData && settingsData.AMMO_LIMITS) || {};
         AMMO.forEach(function (w) { if (lim[w] != null) p.game[w + "Ammo"] = lim[w]; });
         save();
     };
@@ -125,20 +172,19 @@
         ["speed", "turret", "sight", "armor"].forEach(function (k) { p.game[k] = 5; });
         save();
     };
-    MOD.ammo = function (w, n) {                     // MOD.ammo("rockets", 45)
-        var p = profile(); if (p && w) { p.game[w + "Ammo"] = n; save(); }
-    };
+    MOD.ammo = function (w, n) { var p = profile(); if (p && w) { p.game[w + "Ammo"] = n; save(); } };
 
-    /* --- во время боя ----------------------------------------------------- */
+    /* --- во время боя --- */
     MOD.god = function (on) {
         if (MOD._godTimer) { clearInterval(MOD._godTimer); MOD._godTimer = null; }
-        var s = state();
-        if (s && s.player) s.player.invincible = (on !== false);
         if (on !== false) {
             MOD._godTimer = setInterval(function () {
-                var st = state();
-                if (st && st.player) st.player.invincible = true;
+                var s = state();
+                if (s && s.player) s.player.invincible = true;
             }, 250);
+        } else {
+            var s = state();
+            if (s && s.player) s.player.invincible = false;
         }
     };
     MOD.heal = function () {
@@ -152,48 +198,85 @@
             try { if (e && e.alive && e.kill) e.kill(); } catch (err) { }
         });
     };
-    MOD.teleportEnd = MOD.killAll;                   // удобный алиас
 
-    /* --- сброс ------------------------------------------------------------ */
+    /* --- уровни --- */
+    MOD.listLevels = function () {
+        var l = levelsData || [];
+        for (var i = 0; i < l.length; i++) {
+            var rows = l[i].length - 2, cols = String(l[i][2] || "").length;
+            log((i + 1) + ". " + l[i][0] + "  [" + l[i][1] + "] " + cols + "x" + rows);
+        }
+        return l.length;
+    };
+    /* Прыгнуть на любой уровень, включая служебные карты 16+.
+     * MOD.playLevel(34) — «Bosses: Shotgun», MOD.playLevel(1) — кампания. */
+    MOD.playLevel = function (n) {
+        var g = global.AT.game;
+        if (!g) return log("игра ещё не запущена");
+        if (g.state.checkState("Level" + n)) { g.state.start("Level" + n); return true; }
+        log("нет уровня " + n + " (см. MOD.listLevels())");
+        return false;
+    };
+    MOD.toMenu = function () { if (global.AT.game) global.AT.game.state.start("MenuUpgrades"); };
+
+    /* --- сброс --- */
     MOD.reset = function () {
         try { global.AT.profile.reset(); } catch (e) { }
         global.location.reload();
     };
 
     MOD.help = function () {
-        console.log([
-            "MOD API (Awesome Tanks 2)",
-            "  MOD.money(n)            — поставить деньги",
-            "  MOD.addMoney(n)         — добавить денег",
-            "  MOD.unlockAll()         — открыть все 15 уровней",
-            "  MOD.setLevels(n)        — открыть n уровней",
-            "  MOD.setDifficulty(0|1|2)— легко / средне / сложно",
-            "  MOD.maxWeapons(5)       — все пушки на уровень n + патроны",
-            "  MOD.maxUpgrades()       — корпус/башня/обзор/скорость на максимум",
-            "  MOD.refillAmmo()        — полный боезапас",
-            "  MOD.ammo('rockets', 45) — патроны конкретной пушки",
-            "  MOD.god(true|false)     — бессмертие",
-            "  MOD.heal()              — вылечить танк",
-            "  MOD.killAll()           — добить всех врагов на уровне",
-            "  MOD.profile()           — объект сохранения",
-            "  MOD.state()             — текущее состояние Phaser",
-            "  MOD.reset()             — стереть сохранение"
+        log([
+            "Mod Kit v" + VERSION + " — команды (window.MOD)",
+            "  MOD.help()                — этот список",
+            "  MOD.money(n) / MOD.addMoney(n)",
+            "  MOD.unlockAll()           — открыть все 15 уровней",
+            "  MOD.setLevels(n)          — открыть n уровней",
+            "  MOD.setDifficulty(0|1|2)  — легко / средне / сложно",
+            "  MOD.maxWeapons(5)         — все пушки на уровень n + патроны",
+            "  MOD.maxUpgrades()         — корпус/башня/обзор/скорость на максимум",
+            "  MOD.refillAmmo()          — полный боезапас",
+            "  MOD.ammo('rockets', 45)",
+            "  MOD.god(true|false)       — бессмертие",
+            "  MOD.heal() / MOD.killAll()",
+            "  MOD.listLevels()          — список всех 42 карт",
+            "  MOD.playLevel(34)         — прыгнуть на уровень",
+            "  MOD.toMenu()              — вернуться в меню",
+            "  MOD.profile()             — объект сохранения",
+            "  MOD.packs()               — подключённые паки",
+            "  MOD.reset()               — стереть сохранение"
         ].join("\n"));
     };
 
-    /* ===================== АВТОПРИМЕНЕНИЕ ПРИ СТАРТЕ ====================== */
+    /* ===================== ЗАГРУЗКА ПАКОВ И СТАРТ ======================== */
+
+    function injectPacks() {
+        if (!CONFIG.packs || !CONFIG.packs.length || typeof document === "undefined") return;
+        CONFIG.packs.forEach(function (url) {
+            if (document.querySelector('script[data-modpack="' + url + '"]')) return;
+            var s = document.createElement("script");
+            s.src = url;
+            s.setAttribute("data-modpack", url);
+            s.onerror = function () { console.warn("[modkit] не удалось загрузить пак: " + url); };
+            (document.head || document.documentElement).appendChild(s);
+        });
+    }
+    if (typeof document !== "undefined") {
+        if (document.head) injectPacks();
+        else document.addEventListener("DOMContentLoaded", injectPacks);
+    }
 
     function applyAuto() {
-        if (CONFIG.blockAds) {
-            global.showBanner = function () { };   // реклама вызывается как глобальная функция
-        }
+        stubAds();
         if (CONFIG.difficulty >= 0) MOD.setDifficulty(CONFIG.difficulty);
         if (CONFIG.startMoney) MOD.money(CONFIG.startMoney);
         if (CONFIG.unlockLevels) MOD.setLevels(CONFIG.unlockLevels);
         if (CONFIG.maxWeapons) MOD.maxWeapons(5);
         if (CONFIG.maxUpgrades) MOD.maxUpgrades();
         if (CONFIG.godMode) MOD.god(true);
-        console.log("[MOD] загружен. MOD.help() — список команд.");
+        ready = true;
+        packs.forEach(function (p) { if (p.onReady) safe(p.onReady, MOD, p.id); });
+        log("готово. MOD.help() — список команд. Паков: " + packs.length);
     }
 
     var tries = 0;
@@ -202,9 +285,9 @@
         if (global.AT && global.AT.game && global.AT.profile && global.AT.profile.current) {
             clearInterval(wait);
             applyAuto();
-        } else if (tries > 300) {                      // ~30 секунд
+        } else if (tries > 300) {          // ~30 секунд
             clearInterval(wait);
-            console.warn("[MOD] игра так и не запустилась — автоправки не применены");
+            console.warn("[modkit] игра так и не запустилась — автоправки не применены");
         }
     }, 100);
 })(window);
