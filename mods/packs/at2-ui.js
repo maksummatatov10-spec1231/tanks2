@@ -702,15 +702,18 @@
         if (this.overlay.visible) { this.overlay.visible = false; this.overlay.removeAll(true); return; }
         this.overlay.removeAll(true);
 
-        var bgp = g.make.image(300, 300, "game.png", "game/alerts/abandon.png");
-        bgp.anchor.set(.5, .5);
-        bgp.scale.set(1.8, 1.75);
-        this.overlay.add(bgp);
         var shade = g.make.image(300, 300, "game.png", "game/alerts/overlay.png");
         shade.anchor.set(.5, .5);
-        shade.scale.set(3, 3);
-        shade.alpha = .35;
+        shade.scale.set(20, 20);
+        shade.alpha = .6;
         this.overlay.add(shade);
+
+        /* своя панель из родной плитки игры (никакого чужого текста) */
+        var bgp = plateArt(g, this.overlay, 60, 120, 480, 360, null, .99);
+        var bgpIn = plateArt(g, this.overlay, 68, 128, 464, 344, 0x0e5527, 1);
+        var bgpTitle = txt(g, 300, 140, "\u041a\u0410\u041a \u0418\u0413\u0420\u0410\u0422\u042c", 20, COL.accent);
+        bgpTitle.anchor.set(.5, 0);
+        this.overlay.add(bgpTitle);
 
         var lines = [
             "УПРАВЛЕНИЕ (2.0)",
@@ -733,13 +736,13 @@
             "",
             "Всё сохраняется в сохранении игры, оригинальные карты не тронуты."
         ];
-        var t = txt(g, 78, 132, lines.join("\n"), 13, COL.white);
+        var t = txt(g, 92, 176, lines.join("\n"), 13, COL.white);
         this.overlay.add(t);
 
-        var okBtn = artButton(g, this.overlay, 300, 486, BTN + "yes", function () {
+        var okBtn = artButton(g, this.overlay, 300, 456, BTN + "yes", function () {
             self.overlay.visible = false;
         }, self, { scale: .5 });
-        if (!okBtn) btn(g, this.overlay, 265, 466, 70, 40, "OK", function () { self.overlay.visible = false; }, self, { size: 14, accent: true });
+        if (!okBtn) btn(g, this.overlay, 265, 436, 70, 40, "OK", function () { self.overlay.visible = false; }, self, { size: 14, accent: true });
         this.overlay.visible = true;
     };
 
@@ -846,14 +849,12 @@
         ui.items.push(ui.panelBtn);
 
         // сама панель
-        ui.panel = g.make.image(0, 0, "game.png", "game/alerts/abandon.png");
-        ui.panel.anchor.set(0, 0);
-        ui.panel.width = 420; ui.panel.height = 316;
-        if (ui.panel.scale) ui.panel.scale.set(420 / 320, 316 / 252);
+        ui.panel = plateArt(g, layer, 0, 0, 420, 300, null, .99);
         ui.panel.inputEnabled = true;
-        ui.panel.hitArea = new Phaser.Rectangle(0, 0, 420, 316);
+        ui.panel.hitArea = new Phaser.Rectangle(0, 0, 420, 300);
         ui.panel.visible = false;
-        layer.add(ui.panel);
+        ui.panelIn = plateArt(g, layer, 8, 8, 404, 284, 0x0e5527, 1);
+        ui.panelIn.visible = false;
         ui.panelT = txt(g, 0, 0, "", 13, COL.white);
         ui.panelT.visible = false;
         layer.add(ui.panelT);
@@ -982,6 +983,7 @@
 
         var pw = Math.min(440, w - 24);
         ui.panel.position.set((w - pw) / 2, 50);
+        if (ui.panelIn) ui.panelIn.position.set((w - pw) / 2 + 8, 58);
         if (ui.panelT) ui.panelT.position.set((w - pw) / 2 + 40, 76);
         if (ui.closeBtn) ui.closeBtn.position.set((w - pw) / 2 + 14, 50 + 16);
     }
@@ -1001,6 +1003,7 @@
         if (!ui || !ui.panel) return;
         var on = !ui.panel.visible;
         ui.panel.visible = ui.panelT.visible = on;
+        if (ui.panelIn) ui.panelIn.visible = on;
         if (ui.closeBtn) ui.closeBtn.visible = on;
         if (on) {
             refreshPanel(lvl);

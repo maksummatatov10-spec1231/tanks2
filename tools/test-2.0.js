@@ -466,8 +466,9 @@ setTimeout(() => {
     const slot = ui.slots[0];
     slot.events.__down = null;
     ok("кнопка ствола знает свой id", slot.__id === "storm", slot.__id);
-    ok("панель мода — родное окно игры",
-        lvlState.__at2ui.panel.__frame === "game/alerts/abandon.png", String(lvlState.__at2ui.panel.__frame));
+    ok("панель мода — родная плитка игры",
+        lvlState.__at2ui.panel.__frame === "menu/upgrades/parts/frame.png",
+        String(lvlState.__at2ui.panel.__frame));
     ok("счётчик ядер — родная табличка",
         !!lvlState.__at2ui.coreBg && lvlState.__at2ui.coreBg.__frame === "menu/upgrades/parts/frame.png");
 
