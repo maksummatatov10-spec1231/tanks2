@@ -196,6 +196,14 @@ AT.game = {
            },
            checkState: function (k) { return !!AT.game.state.states[k]; } },
   physics: { box2d: { raycast: function () { return []; } } },
+  cache: { __frames: null,
+           getFrame: function (key, frame) {
+               if (!this.__frames) return {};                 /* атласов нет — не мешаем */
+               var f = this.__frames[key];
+               if (!f) return {};                             /* не атлас: одиночная картинка */
+               if (frame == null) return null;                 /* атлас без кадра — ошибка */
+               return f[frame] ? {} : null;
+           } },
   add: { tween: function () { return { to: function () { return { onComplete: { add: function () {} } }; } }; },
          image: function (x, y, key, frame) { return AT.game.make.image(x, y, key, frame); } },
   make: {
@@ -357,47 +365,38 @@ setTimeout(() => {
     win.eval("Math.random = __rand;");
 
     lvlState.shakeCamera.call(lvlState, 10);
-    ok("тряска камеры масштабируется (физика 2.0)", Math.abs(lvlState.shake - 8) < 0.001, String(lvlState.shake));
+    ok("тряска камеры не изменяется (родная, как в игре)", Math.abs(lvlState.shake - 10) < 0.001,
+        String(lvlState.shake));
 
-    section("7b. Движение: танк едет всегда, инерция — когда таймер жив");
+    section("7b. Физика — родная: мод не трогает ни move, ни скорость");
 
-    /* Главная регрессия: раньше move() «проглатывался» и танк не двигался,
-       потому что хук на Level.update был мёртвым (Phaser кэширует update
-       состояния при старте). Теперь есть таймер и запасной путь. */
+    ok("физика 2.0 выключена по умолчанию (используется оригинальная)",
+        MOD.CONFIG.physics.enabled === false, String(MOD.CONFIG.physics.enabled));
+    ok("тряска камеры не масштабируется (1 = как в игре)",
+        MOD.CONFIG.physics.shakeScale === 1, String(MOD.CONFIG.physics.shakeScale));
+
+    /* главная регрессия: раньше мод перехватывал move() и танк не двигался */
     player.body.velocity.x = 0; player.body.velocity.y = 0;
-    player._at2moveAt = 0;
-    win.AT.game.__tick = null;
-    lvlState.create.call(lvlState);           // уровень создан, таймер заведён
-    ok("таймер движения заведён при создании уровня", typeof win.AT.game.__tick === "function");
-
-    /* Пока таймер ни разу не тикал (например, сцена только что сменилась),
-       move обязан работать как в оригинале — иначе танк снова встанет. */
+    player._at2dir = null;
+    lvlState.create.call(lvlState);
     player.move(1, 0);
-    ok("без тика таймера танк едет как в оригинале (мгновенная скорость)",
+    ok("move() работает как в оригинале: скорость ставится сразу",
         Math.abs(player.body.velocity.x - player.moveSpeed) < 0.001, String(player.body.velocity.x));
+    ok("мод ничего не запоминает вместо игры (нет перехвата ввода)",
+        player._at2dir == null, JSON.stringify(player._at2dir));
+    ok("таймер движения не заводится (нечего вести)",
+        typeof win.AT.game.__tick !== "function", typeof win.AT.game.__tick);
 
-    /* Теперь таймер живой — включается инерция 2.0 */
-    const tick = win.AT.game.__tick;
-    tick();                                    // первый тик: помечаем время
-    player.body.velocity.x = 0;
-    player.move(1, 0);
-    tick();
-    const v1 = player.body.velocity.x;
-    ok("с живым таймером скорость растёт постепенно, а не мгновенно",
-        v1 > 0 && v1 < player.moveSpeed, String(v1));
-    for (let i = 0; i < 40; i++) { player.move(1, 0); tick(); }
-    ok("за 40 кадров танк выходит на полную скорость",
-        Math.abs(player.body.velocity.x - player.moveSpeed) < 25, String(player.body.velocity.x));
-    player._at2moveAt = Date.now() - 500;      // клавишу отпустили (прошло время)
-    for (let i = 0; i < 120; i++) tick();
-    ok("без ввода танк тормозит и останавливается",
-        Math.abs(player.body.velocity.x) < 0.001, String(player.body.velocity.x));
-    ok("ходьба подтверждена: скорость считалась хотя бы раз", player._at2speed !== undefined,
-        String(player._at2speed));
+    player.move(0, 0);
+    ok("остановка тоже родная", player.body.velocity.x === 0 && player.body.velocity.y === 0);
 
-    /* Клавиатура: игра двигает танк именно из-за нажатых клавиш */
-    ok("ванильные клавиши движения на месте",
-        typeof lvlState.upKey !== "undefined" || true);
+    player.move(-1, 1);
+    ok("диагональ и направление как в игре",
+        Math.abs(player.body.velocity.x + player.moveSpeed) < 0.001 &&
+        Math.abs(player.body.velocity.y - player.moveSpeed) < 0.001,
+        JSON.stringify(player.body.velocity));
+
+    /* скорость из чит-меню проверяется в секции 8d, когда MOD.cheats уже создан */
 
     section("8. Меню: play ведёт в хаб 2.0");
     AT.game.state.states.MenuTitle.next();
@@ -513,13 +512,15 @@ setTimeout(() => {
 
     ch.set("speed", 2);
     ok("множитель скорости отдаётся физике", ch.speedMul() === 2, String(ch.speedMul()));
-    player.body.velocity.x = 0; player.body.velocity.y = 0;
-    const tickFn = win.AT.game.__tick;
-    tickFn && tickFn();
-    for (let i = 0; i < 60; i++) { player.move(1, 0); tickFn && tickFn(); }
-    ok("со множителем 2 танк реально быстрее",
-        player.body.velocity.x > player.moveSpeed * 1.5, String(player.body.velocity.x));
+    player.move(1, 0);
+    ok("чит-скорость удваивает родную скорость игрока",
+        Math.abs(player.body.velocity.x - player.moveSpeed) < 0.001 && player.moveSpeed > 200,
+        "moveSpeed=" + player.moveSpeed + " v=" + player.body.velocity.x);
     ch.set("speed", 1);
+    player.move(1, 0);
+    ok("сброс скорости возвращает родное значение и родную скорость",
+        Math.abs(player.moveSpeed - 200) < 0.001 && Math.abs(player.body.velocity.x - 200) < 0.001,
+        "moveSpeed=" + player.moveSpeed + " v=" + player.body.velocity.x);
 
     player.weapons = [{ rate: 2 }];
     ch.set("rate", 3);
@@ -579,6 +580,48 @@ setTimeout(() => {
     ok("после закрытия клавиатура и мышь возвращаются игре",
         win.AT.game.input.keyboard.enabled === true &&
         win.AT.game.input.enabled === true && ch.isOpen() === false);
+
+    /* подсовываем реальные атласы игры, чтобы проверки были не абстрактными */
+    (function loadAtlasFrames() {
+        const fs2 = require("fs");
+        const dir = path.join(ROOT, "images");
+        const map = {
+            "game.png": "game.json",
+            "menu/levels.png": path.join("menu", "levels.json"),
+            "menu/upgrades/parts.png": path.join("menu", "upgrades", "parts.json")
+        };
+        const frames = {};
+        Object.keys(map).forEach(k => {
+            const f = path.join(dir, map[k]);
+            if (fs2.existsSync(f)) frames[k] = JSON.parse(fs2.readFileSync(f, "utf8")).frames;
+        });
+        win.AT.game.cache.__frames = Object.keys(frames).length ? frames : null;
+    })();
+
+    section("8e. Защита от «всех спрайтов»: битый кадр никогда не рисуется");
+    ok("мод умеет проверять кадр", typeof MOD.badFrame === "function");
+    ok("существующий кадр считается валидным",
+        MOD.badFrame("game.png", "game/projectiles/plasma.png") === false);
+    ok("несуществующий кадр определяется",
+        MOD.badFrame("game.png", "game/projectiles/НЕТ-ТАКОГО.png") === true);
+    ok("атлас без указания кадра — тоже ошибка",
+        MOD.badFrame("game.png") === true);
+    ok("одиночная картинка без кадра — это нормально",
+        MOD.badFrame("menu/upgrades/background.png") === false);
+
+    /* в игре защиту включает лоадер при старте (applyAuto) */
+    const guardAgain = MOD.guardFactories();
+    ok("защита фабрик спрайтов включена (лоадером)", win.AT.game.__at2FactoriesGuarded === true);
+    ok("повторный вызов защиты безвреден (идемпотентно)", guardAgain === false);
+    ok("защита эмиттеров частиц не падает", MOD.guardEmitters() !== undefined);
+
+    const good = win.AT.game.make.sprite(0, 0, "game.png", "game/projectiles/plasma.png");
+    ok("спрайт с верным кадром остаётся видимым", good.visible !== false);
+    const bad = win.AT.game.make.sprite(0, 0, "game.png", "game/projectiles/НЕТ-ТАКОГО.png");
+    ok("спрайт с битым кадром скрыт (а не показывает весь атлас)",
+        bad.visible === false && !!bad.__at2BadFrame, JSON.stringify(bad.__at2BadFrame));
+    const badImg = win.AT.game.add.image(0, 0, "menu/upgrades/parts.png", "menu/upgrades/parts/нет.png");
+    ok("картинка с битым кадром тоже скрыта", badImg.visible === false);
 
     section("9. Кадры родной графики, которые использует мод");
     /* проверяем по атласам игры, что все имена кадров существуют

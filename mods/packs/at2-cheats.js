@@ -23,7 +23,7 @@
     var M = window.MOD;
     if (!M) { console.warn("[at2-cheats] нужен mod-loader.js"); return; }
 
-    var VERSION = "2.0.3";
+    var VERSION = "2.0.4";
     var PREFIX = "at2-cheats";
     var FONT = "Gunplay, 'Trebuchet MS', Arial, sans-serif";
 
@@ -100,6 +100,23 @@
         });
     }
 
+    /* Скорость игрока — через родную переменную moveSpeed: работает и на
+       оригинальной физике, и с включённой механикой 2.0. Базовое значение
+       запоминаем один раз, поэтому переключения уровня ничего не портят. */
+    function applySpeed() {
+        var mul = Number(cheats().speed) || 1;
+        var s = M.state();
+        var p = s && s.player;
+        if (!p) return;
+        if (p.__at2speedBase == null || !p.__at2speedBase) p.__at2speedBase = p.moveSpeed || 1;
+        var base = p.__at2speedBase;
+        if (mul === 1) {
+            if (p.moveSpeed !== base) p.moveSpeed = base;
+            return;
+        }
+        p.moveSpeed = base * mul;
+    }
+
     function applyMoney() {
         var v = cheats().money;
         if (v == null) return;
@@ -117,6 +134,7 @@
         applyMoney();
         applyCores();
         applyRate();
+        applySpeed();
         syncFields();
     }
 
@@ -130,6 +148,7 @@
         if (key === "money") applyMoney();
         if (key === "cores") applyCores();
         if (key === "rate") applyRate();
+        if (key === "speed") applySpeed();
         if (!silent) { syncFields(); M.emit("cheats", c); }
         return c[key];
     }
@@ -458,9 +477,15 @@
         }
     });
 
+    /* следим за уровнем: скорость и темп огня переживают рестарт карты */
+    var watch = setInterval(function () {
+        try { applySpeed(); } catch (e) { }
+    }, 500);
+
     M.on("levelCreate", function () {
         applyGod();
         applyRate();
+        applySpeed();
     });
 
     /* ============================== ЭКСПОРТ ============================= */

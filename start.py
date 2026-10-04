@@ -34,7 +34,7 @@ import webbrowser
 HERE = os.path.dirname(os.path.abspath(__file__))
 GAME_FILE = "awesome_tanks_2.js"
 
-MOD_BUILD = "2.0.3"          # версия сборки мода (видна в игре и в чит-меню)
+MOD_BUILD = "2.0.4"          # версия сборки мода (видна в игре и в чит-меню)
 ASSET_DIRS = ("images", "sounds", "scripts", "styles", "fonts")
 
 BEGIN = "<!-- AT2MOD:BEGIN -->"
@@ -160,7 +160,8 @@ def pack_block(prefix=""):
     lines = [BEGIN]
     lines.append("  <!-- Awesome Tanks 2.0: мод-кит. Игровых файлов не содержит. -->")
     for rel in PACKS:
-        lines.append('  <script src="%s%s"></script>' % (prefix, rel))
+        # "?v=" — чтобы браузер не отдал из кэша старую версию пака
+        lines.append('  <script src="%s%s?v=%s"></script>' % (prefix, rel, MOD_BUILD))
     lines.append(END)
     return "\n".join(lines)
 

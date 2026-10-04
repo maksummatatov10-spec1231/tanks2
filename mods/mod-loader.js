@@ -160,6 +160,85 @@
         return d;
     }
 
+    /* ================= ЗАЩИТА ОТ «ВСЕХ СПРАЙТОВ» ========================= */
+    /* Phaser при неизвестном кадре рисует ВЕСЬ атлас: в loadTexture, если кадр
+       не найден, спрайт получает прямоугольник всей текстуры. Одна опечатка в
+       имени кадра — и на экране «все спрайты игры». Ставим защиту на фабрики
+       game.make.* / game.add.*: если кадра нет, спрайт создаётся, но остаётся
+       невидимым, а в консоли появляется предупреждение с точным именем кадра.
+       Работает для любого пака мода и не мешает самой игре (её кадры валидны). */
+
+    var warnedFrames = {};
+
+    function badFrame(cache, key, frame) {
+        try {
+            if (!cache || !cache.getFrame) return false;
+            if (!frame && frame !== 0) {
+                /* кадра не передали: ругаемся только если это атлас
+                   (у одиночной картинки базовый кадр есть всегда) */
+                return !cache.getFrame(key);
+            }
+            return !cache.getFrame(key, frame);
+        } catch (e) { return false; }
+    }
+
+    function guardFactories() {
+        var g = global.AT && global.AT.game;
+        if (!g || g.__at2FactoriesGuarded) return false;
+        g.__at2FactoriesGuarded = true;
+
+        var names = ["sprite", "image", "button", "tileSprite"];
+        ["make", "add"].forEach(function (hub) {
+            var target = g[hub];
+            if (!target) return;
+            names.forEach(function (name) {
+                var orig = target[name];
+                if (typeof orig !== "function") return;
+                target[name] = function (x, y, key, frame) {
+                    var obj = orig.apply(this, arguments);
+                    try {
+                        if (badFrame(g.cache, key, frame)) {
+                            var mark = String(key) + "|" + String(frame);
+                            if (!warnedFrames[mark]) {
+                                warnedFrames[mark] = true;
+                                warn("кадра нет в атласе: " + key + " / " + frame +
+                                     " — спрайт скрыт (иначе Phaser нарисовал бы весь атлас)");
+                            }
+                            obj.visible = false;
+                            obj.__at2BadFrame = mark;
+                        }
+                    } catch (e) { }
+                    return obj;
+                };
+            });
+        });
+        log("защита кадров включена (make/add: sprite, image, button, tileSprite)");
+        return true;
+    }
+
+    /* эмиттеры частиц (emitParticle) — тоже частая причина «всего атласа» */
+    function guardEmitters() {
+        var Ph = global.Phaser;
+        var Emitter = Ph && Ph.Particles && Ph.Particles.Arcade && Ph.Particles.Arcade.Emitter;
+        if (!Emitter || !Emitter.prototype || Emitter.prototype.__at2Guarded) return false;
+        var orig = Emitter.prototype.emitParticle;
+        if (typeof orig !== "function") return false;
+        Emitter.prototype.__at2Guarded = true;
+        Emitter.prototype.emitParticle = function (x, y, key, frame) {
+            var g = global.AT && global.AT.game;
+            if (g && key && badFrame(g.cache, key, frame)) {
+                var mark = String(key) + "|" + String(frame);
+                if (!warnedFrames[mark]) {
+                    warnedFrames[mark] = true;
+                    warn("частица с несуществующим кадром скрыта: " + key + " / " + frame);
+                }
+                return null;
+            }
+            return orig.apply(this, arguments);
+        };
+        return true;
+    }
+
     /* ============================ СЛУЖЕБНОЕ ============================== */
 
     var listeners = {};
@@ -228,6 +307,14 @@
                 safe(fn, "keepTrying");
             }, everyMs || 1000);
             return t;
+        },
+
+        /* защита от «всех спрайтов» наружу (для паков и тестов) */
+        guardFactories: guardFactories,
+        guardEmitters: guardEmitters,
+        badFrame: function (key, frame) {
+            var g = global.AT && global.AT.game;
+            return badFrame(g && g.cache, key, frame);
         },
 
         /* событийная шина и полезные ссылки */
@@ -398,6 +485,12 @@
 
     function applyAuto() {
         stubAds();
+        /* защита от «всех спрайтов» ставится ДО паков: если в паке опечатка в
+           имени кадра, Phaser рисует весь атлас — теперь спрайт будет скрыт,
+           а в консоль уйдёт предупреждение с именем кадра */
+        guardFactories();
+        guardEmitters();
+        safe(function () { MOD.keepTrying(guardEmitters, 60); }, "guardEmitters");
         if (CONFIG.difficulty >= 0) MOD.setDifficulty(CONFIG.difficulty);
         if (CONFIG.startMoney) MOD.money(CONFIG.startMoney);
         if (CONFIG.unlockLevels) MOD.setLevels(CONFIG.unlockLevels);
