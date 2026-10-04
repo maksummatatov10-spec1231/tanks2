@@ -23,7 +23,7 @@
     var M = window.MOD;
     if (!M) { console.warn("[at2-cheats] нужен mod-loader.js"); return; }
 
-    var VERSION = "2.0.0";
+    var VERSION = "2.0.3";
     var PREFIX = "at2-cheats";
     var FONT = "Gunplay, 'Trebuchet MS', Arial, sans-serif";
 
@@ -169,7 +169,8 @@
             position: "fixed", left: "0", top: "0", right: "0", bottom: "0",
             zIndex: "2147483000", display: "none",
             alignItems: "center", justifyContent: "center",
-            background: "rgba(4, 18, 9, 0.72)"
+            /* фон непрозрачный: пока окно открыто, игры и её спрайтов не видно */
+            background: "#07230f"
         });
         root.id = PREFIX;
 
@@ -184,6 +185,8 @@
         head.appendChild(el("div", {
             flex: "1", fontSize: "21px", color: "#ffb600", letterSpacing: "1px"
         }, "\u0427\u0418\u0422-\u041c\u0415\u041d\u042e"));
+        head.appendChild(el("div", { fontSize: "12px", color: "#a9c7a6", marginRight: "8px" },
+            "\u043c\u043e\u0434 " + (window.AT2_VERSION || VERSION)));
         var closeX = el("button", {
             width: "30px", height: "30px", cursor: "pointer", borderRadius: "8px",
             border: "2px solid #ffb600", background: "#0a3d1c", color: "#ffb600",
@@ -357,6 +360,8 @@
 
     function game() { return window.AT && window.AT.game; }
 
+    var prevInputEnabled = null;
+
     function blockGameInput(on) {
         var g = game();
         if (!g) return;
@@ -365,6 +370,18 @@
                 g.input.keyboard.enabled = !on;
                 if (g.input.keyboard._keys) {
                     g.input.keyboard._keys.forEach(function (k) { if (k && k.reset) k.reset(); });
+                }
+            }
+            /* главное: пока окно открыто, игра не должна получать клики —
+               иначе нажатие «применить/бессмертие» проваливается в меню игры,
+               и она открывает свои экраны (все спрайты) */
+            if (g.input) {
+                if (on) {
+                    if (prevInputEnabled == null) prevInputEnabled = g.input.enabled !== false;
+                    g.input.enabled = false;
+                } else {
+                    g.input.enabled = (prevInputEnabled === null) ? true : prevInputEnabled;
+                    prevInputEnabled = null;
                 }
             }
         } catch (e) { }
@@ -418,12 +435,16 @@
         }
     }, true);
 
-    /* клики по оверлею не должны попадать в игру */
-    window.addEventListener("mousedown", function (e) {
+    /* клики по окну не должны попадать в игру */
+    function swallow(e) {
         if (isOpen && root && (e.target === root || root.contains(e.target))) {
             e.stopPropagation();
+            e.stopImmediatePropagation && e.stopImmediatePropagation();
         }
-    }, true);
+    }
+    ["mousedown", "mouseup", "click", "dblclick", "contextmenu", "wheel", "touchstart", "touchend"].forEach(function (t) {
+        window.addEventListener(t, swallow, true);
+    });
 
     M.on("ready", function () {
         var proto = window.AT && window.AT.Tank && window.AT.Tank.prototype;
@@ -467,7 +488,8 @@
         onReady: function () {
             applyGod();
             applyRate();
-            M.log("чит-меню готово: правый Shift");
+            window.AT2_VERSION = VERSION;
+            M.log("чит-меню готово: правый Shift (мод " + VERSION + ")");
         }
     });
 })();

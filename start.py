@@ -33,6 +33,8 @@ import webbrowser
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 GAME_FILE = "awesome_tanks_2.js"
+
+MOD_BUILD = "2.0.3"          # версия сборки мода (видна в игре и в чит-меню)
 ASSET_DIRS = ("images", "sounds", "scripts", "styles", "fonts")
 
 BEGIN = "<!-- AT2MOD:BEGIN -->"
@@ -302,7 +304,7 @@ def main():
     ap.add_argument("--uninstall", action="store_true", help="убрать мод из копии игры")
     args = ap.parse_args()
 
-    say("Awesome Tanks 2.0 — мод-кит")
+    say("Awesome Tanks 2.0 — мод-кит, сборка " + MOD_BUILD)
     say("=" * 46)
 
     game_dir = find_game(args.game)
@@ -348,7 +350,8 @@ def main():
 
     if args.check:
         say("")
-        say("Проверка пройдена. Запуск:  python3 start.py")
+        say("Проверка пройдена. Сборка мода: " + MOD_BUILD)
+        say("Запуск:  python3 start.py")
         return
 
     port = free_port(args.port, args.host)

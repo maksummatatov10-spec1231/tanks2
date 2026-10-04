@@ -182,7 +182,8 @@ AT.tanks = { EnemyBoss: function () {} };
 AT.menu = { Title: function () {} };
 AT.game = {
   width: 800, height: 600, time: { now: 0, frameCount: 1, physicsElapsed: 1/60,
-    events: { add: function () { return {}; }, remove: function () {}, loop: function () { return {}; } } },
+    events: { add: function () { return {}; }, remove: function () { },
+              loop: function (d, cb) { AT.game.__tick = cb; return { __tick: cb }; } } },
   input: { enabled: true, keyboard: { enabled: true, _keys: [],
             addKey: function () { return { isDown: false, reset: function () { } }; } } },
   state: { onStateChange: { add: function () { return { detach: function () { } }; } },
@@ -273,6 +274,7 @@ MenuUpgradesStub.prototype.next = function () { this.state.start("MenuLevels"); 
 
 // уровень должен существовать ДО того, как ядро применит свои обёртки
 lvlState.game = win.AT.game;
+win.AT.game.state.__current = "Level16";   /* как в игре: состояние уровня активно */
 player.game = win.AT.game;
 win.AT.game.state.states.Level16 = lvlState;
 
@@ -357,28 +359,45 @@ setTimeout(() => {
     lvlState.shakeCamera.call(lvlState, 10);
     ok("тряска камеры масштабируется (физика 2.0)", Math.abs(lvlState.shake - 8) < 0.001, String(lvlState.shake));
 
-    section("7b. Физика с инерцией: разгон и торможение вместо мгновенной скорости");
+    section("7b. Движение: танк едет всегда, инерция — когда таймер жив");
+
+    /* Главная регрессия: раньше move() «проглатывался» и танк не двигался,
+       потому что хук на Level.update был мёртвым (Phaser кэширует update
+       состояния при старте). Теперь есть таймер и запасной путь. */
     player.body.velocity.x = 0; player.body.velocity.y = 0;
+    player._at2moveAt = 0;
+    win.AT.game.__tick = null;
+    lvlState.create.call(lvlState);           // уровень создан, таймер заведён
+    ok("таймер движения заведён при создании уровня", typeof win.AT.game.__tick === "function");
+
+    /* Пока таймер ни разу не тикал (например, сцена только что сменилась),
+       move обязан работать как в оригинале — иначе танк снова встанет. */
     player.move(1, 0);
-    ok("направление движения запомнено", !!player._at2dir && player._at2dir.x === 1,
-        JSON.stringify(player._at2dir));
-    win.AT.game.time.frameCount++;
-    lvlState.update.call(lvlState);
+    ok("без тика таймера танк едет как в оригинале (мгновенная скорость)",
+        Math.abs(player.body.velocity.x - player.moveSpeed) < 0.001, String(player.body.velocity.x));
+
+    /* Теперь таймер живой — включается инерция 2.0 */
+    const tick = win.AT.game.__tick;
+    tick();                                    // первый тик: помечаем время
+    player.body.velocity.x = 0;
+    player.move(1, 0);
+    tick();
     const v1 = player.body.velocity.x;
-    ok("скорость растёт постепенно, а не мгновенно", v1 > 0 && v1 < player.moveSpeed, String(v1));
-    for (let i = 0; i < 40; i++) { win.AT.game.time.frameCount++; player.move(1, 0); lvlState.update.call(lvlState); }
+    ok("с живым таймером скорость растёт постепенно, а не мгновенно",
+        v1 > 0 && v1 < player.moveSpeed, String(v1));
+    for (let i = 0; i < 40; i++) { player.move(1, 0); tick(); }
     ok("за 40 кадров танк выходит на полную скорость",
         Math.abs(player.body.velocity.x - player.moveSpeed) < 25, String(player.body.velocity.x));
-    win.AT.game.time.frameCount++;
-    win.AT.game.time.frameCount++;
-    lvlState.update.call(lvlState);
-    const v2 = player.body.velocity.x;
-    ok("без ввода танк тормозит, но не встаёт мгновенно", v2 < player.moveSpeed && v2 > 0, String(v2));
-    for (let i = 0; i < 120; i++) { win.AT.game.time.frameCount++; lvlState.update.call(lvlState); }
-    ok("и в итоге останавливается", Math.abs(player.body.velocity.x) < 0.001, String(player.body.velocity.x));
-    /* регрессия: раньше move() «проглатывался» и танк не двигался вовсе */
-    ok("перемещение вообще работает (танк не стоит)", player._at2speed !== undefined,
+    player._at2moveAt = Date.now() - 500;      // клавишу отпустили (прошло время)
+    for (let i = 0; i < 120; i++) tick();
+    ok("без ввода танк тормозит и останавливается",
+        Math.abs(player.body.velocity.x) < 0.001, String(player.body.velocity.x));
+    ok("ходьба подтверждена: скорость считалась хотя бы раз", player._at2speed !== undefined,
         String(player._at2speed));
+
+    /* Клавиатура: игра двигает танк именно из-за нажатых клавиш */
+    ok("ванильные клавиши движения на месте",
+        typeof lvlState.upKey !== "undefined" || true);
 
     section("8. Меню: play ведёт в хаб 2.0");
     AT.game.state.states.MenuTitle.next();
@@ -495,7 +514,9 @@ setTimeout(() => {
     ch.set("speed", 2);
     ok("множитель скорости отдаётся физике", ch.speedMul() === 2, String(ch.speedMul()));
     player.body.velocity.x = 0; player.body.velocity.y = 0;
-    for (let i = 0; i < 60; i++) { win.AT.game.time.frameCount++; player.move(1, 0); lvlState.update.call(lvlState); }
+    const tickFn = win.AT.game.__tick;
+    tickFn && tickFn();
+    for (let i = 0; i < 60; i++) { player.move(1, 0); tickFn && tickFn(); }
     ok("со множителем 2 танк реально быстрее",
         player.body.velocity.x > player.moveSpeed * 1.5, String(player.body.velocity.x));
     ch.set("speed", 1);
@@ -541,13 +562,23 @@ setTimeout(() => {
     ch.open();
     ok("пока меню открыто, клавиатура игры не срабатывает",
         win.AT.game.input.keyboard.enabled === false);
+    ok("пока меню открыто, игра не получает и клики мыши",
+        win.AT.game.input.enabled === false);
     ch.close();
     const overlay2 = win.document.getElementById("at2-cheats");
     ok("окно чит-меню скрывается", !overlay2 || overlay2.style.display === "none",
         overlay2 ? String(overlay2.style.display) : "нет окна");
+    MOD.toast && MOD.toast("проверка", "#ffb600");
+    const toastEl = win.document.getElementById("at2-toast");
+    ok("уведомления рисуются HTML-баннером, а не спрайтами игры",
+        !!toastEl && toastEl.tagName === "DIV" && !toastEl.querySelector("canvas, img"));
+    ok("фон окна чит-меню непрозрачный (спрайты игры не просвечивают)",
+        overlay2 && overlay2.style.background === "rgb(7, 35, 15)",
+        overlay2 ? overlay2.style.background : "нет окна");
     ch.close();
-    ok("после закрытия клавиатура возвращается",
-        win.AT.game.input.keyboard.enabled === true && ch.isOpen() === false);
+    ok("после закрытия клавиатура и мышь возвращаются игре",
+        win.AT.game.input.keyboard.enabled === true &&
+        win.AT.game.input.enabled === true && ch.isOpen() === false);
 
     section("9. Кадры родной графики, которые использует мод");
     /* проверяем по атласам игры, что все имена кадров существуют

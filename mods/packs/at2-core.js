@@ -63,13 +63,22 @@
     /* ================= 2. ФИЗИКА: инерция и мягкий отскок ================== */
 
     var physProto = null;
+    var tickEvent = null, lastTick = 0;
 
-    /* Инерция 2.0.
-       Ваниль ставит скорость мгновенно: move() вызывается из Level.update ТОЛЬКО
-       когда нажата клавиша, а тормозит танк линейное демпфирование тела.
-       Поэтому нельзя «проглотить» move — танк просто встанет. Мы запоминаем
-       желаемое направление, а скорость ведём к цели в at2Motion(), который
-       вызывается из Level.update каждый кадр (см. installLevelPatches). */
+    /* Инерция 2.0 — с гарантией, что танк вообще ездит.
+     *
+     * Ваниль ставит скорость мгновенно: Level.update зовёт move() ТОЛЬКО когда
+     * нажата клавиша. Поэтому «проглотить» move и надеяться на свой хук нельзя:
+     * Phaser кэширует функцию update состояния в момент старта
+     * (StateManager.onUpdateCallback = states[key].update), и хук, поставленный
+     * позже, уже не вызывается — танк просто встаёт.
+     *
+     * Поэтому: скорость ведёт таймер игры (game.time.events.loop), который живёт
+     * независимо от состояний, а move() только запоминает направление. Если
+     * таймер по какой-то причине не тикал дольше 250 мс (пауза, смена сцены,
+     * что угодно) — move() пропускается как в оригинале, и танк едет мгновенно.
+     * То есть движение не может сломаться в принципе.
+     */
     function installMotion(proto) {
         if (!proto || physProto === proto || !C.physics.enabled) return;
         physProto = proto;
@@ -79,13 +88,51 @@
                 if (!C.physics.enabled || this.name !== "player" || !this.body || !isFinite(this.moveSpeed)) {
                     return orig.call(this, vx, vy);
                 }
+                armTicker();
+                if (Date.now() - lastTick > 250) {
+                    /* страховка: наш таймер не работает — пусть двигает сама игра */
+                    this._at2dir = null;
+                    return orig.call(this, vx, vy);
+                }
                 this._at2dir = { x: vx || 0, y: vy || 0 };
-                this._at2frame = this.game.time.frameCount;
+                this._at2moveAt = Date.now();
             };
         });
     }
 
-    /* Вызывается каждый кадр уровня (в конце Level.update) для игрока. */
+    function game() { return (window.AT && window.AT.game) || null; }
+
+    /* Текущее состояние уровня: и по M.state(), и напрямую из Phaser. */
+    function currentLevel() {
+        var s = M.state();
+        if (s && s.player) return s;
+        var g = game();
+        if (!g || !g.state) return null;
+        var st = g.state.states && g.state.states[g.state.current];
+        return (st && st.player) ? st : null;
+    }
+
+    function armTicker() {
+        var g = game();
+        if (!g || !g.time || !g.time.events) return;
+        if (tickEvent) {
+            /* событие могло быть снято при смене сцены — пробуем его убрать */
+            try { g.time.events.remove(tickEvent); } catch (e) { }
+            tickEvent = null;
+        }
+        try {
+            tickEvent = g.time.events.loop(16, function () { tickMotion(); }, null);
+        } catch (e) { tickEvent = null; }
+    }
+
+    function tickMotion() {
+        lastTick = Date.now();
+        var lvl = currentLevel();
+        if (!lvl || lvl.gamePaused) return;
+        try { at2Motion(lvl); } catch (e) { }
+    }
+
+    /* Кадр игрока: ведём скорость к цели (разгон) или к нулю (торможение). */
     function at2Motion(lvl) {
         var t = lvl && lvl.player;
         if (!t || !t.body || t.name !== "player" || !t.alive) return;
@@ -94,10 +141,10 @@
         if (!cfg.enabled) return;
 
         var b = t.body;
-        var dt = Math.min(t.game.time.physicsElapsed || 1 / 60, 1 / 30);
+        var dt = Math.min((t.game && t.game.time && t.game.time.physicsElapsed) || 1 / 60, 1 / 30);
 
-        // Ввод свежий, если move() звали в этом или прошлом кадре.
-        var fresh = (t.game.time.frameCount - (t._at2frame || -9)) <= 1;
+        /* ввод считаем свежим ~4 кадра: move() зовётся только при нажатой клавише */
+        var fresh = (Date.now() - (t._at2moveAt || 0)) <= 80;
         var dir = (fresh && t._at2dir) ? t._at2dir : { x: 0, y: 0 };
         var moving = !!(dir.x || dir.y);
 
@@ -187,21 +234,9 @@
                     try {
                         M.level = this; M.player = this.player;
                         tunePlayerBody(this.player);
+                        armTicker();
                         M.emit("levelCreate", this);
                     } catch (e) { M.warn("levelCreate:", e); }
-                    return r;
-                };
-            });
-
-            /* Инерция считается здесь: игра обновляет управление внутри
-               Level.update, а физику шагает сразу после — значит, менять
-               скорость надо в конце update, иначе кадр потеряется. */
-            M.wrap(st, "update", function (orig) {
-                return function () {
-                    var r = orig.apply(this, arguments);
-                    if (!this.gamePaused) {
-                        try { at2Motion(this); } catch (e) { }
-                    }
                     return r;
                 };
             });
@@ -266,24 +301,35 @@
     }
 
     /* =============== 5. ЭКРАННЫЕ УВЕДОМЛЕНИЯ (в стиле игры) ============== */
-    // Используем тот же фон, что и всплывающая прибыль, — выглядит родным.
+    /* Обычный HTML-баннер поверх страницы: раньше он рисовался спрайтами
+       Phaser, и любая ошибка с кадром атласа показывала вместо плашки весь
+       атлас игры. Теперь рисовать нечего — баннер не может ничего сломать. */
+    var toastEl = null, toastTimer = null;
+
     function banner(text, color) {
-        var lvl = M.state();
         try {
-            var hud = lvl && lvl.hud;
-            if (!hud || !hud.add) return;
-            var bg = lvl.game.make.image(-118, -65, "game.png", "game/hud/profit.png");
-            var txt = lvl.game.make.text(204, 17, text);
-            txt.anchor.set(1, .5);
-            txt.font = "Gunplay"; txt.fontWeight = "400"; txt.fontSize = 20;
-            txt.fill = color || "#7CE7FF";
-            bg.addChild(txt);
-            hud.add(bg);
-            var t = lvl.game.add.tween(bg.position).to({ y: -95 }, 220, Phaser.Easing.Cubic.Out, true);
-            lvl.game.time.events.add(1500, function () {
-                var out = lvl.game.add.tween(bg.position).to({ y: -65, alpha: 0 }, 250, Phaser.Easing.Cubic.In, true);
-                out.onComplete.add(function () { try { hud.remove(bg); bg.destroy(); } catch (e) { } });
-            });
+            if (typeof document === "undefined" || !document.body) return;
+            if (!toastEl) {
+                toastEl = document.createElement("div");
+                toastEl.id = "at2-toast";
+                toastEl.style.cssText = [
+                    "position:fixed", "left:50%", "top:14px", "transform:translateX(-50%)",
+                    "z-index:2147482000", "pointer-events:none", "max-width:80vw",
+                    "padding:8px 18px", "border-radius:10px",
+                    "background:#11662f", "border:2px solid #ffb600",
+                    "color:#ffb600", "text-align:center",
+                    "font:20px Gunplay, 'Trebuchet MS', Arial, sans-serif",
+                    "text-shadow:0 2px 0 #07230f",
+                    "box-shadow:0 6px 22px rgba(0,0,0,.45)",
+                    "opacity:0", "transition:opacity .15s linear"
+                ].join(";");
+                document.body.appendChild(toastEl);
+            }
+            toastEl.textContent = text;
+            toastEl.style.color = color || "#ffb600";
+            toastEl.style.opacity = "1";
+            if (toastTimer) clearTimeout(toastTimer);
+            toastTimer = setTimeout(function () { if (toastEl) toastEl.style.opacity = "0"; }, 1500);
         } catch (e) { }
     }
 
@@ -295,13 +341,20 @@
     M.registerPack({
         id: "at2-core",
         name: "Awesome Tanks 2.0 — ядро",
-        version: "3.0.0",
+        version: "3.1.0",
 
         patchSettings: patchSettings,
 
         onReady: function () {
             /* состояния уровней могли появиться не сразу — повторяем, функция идемпотентна */
             if (M.keepTrying) M.keepTrying(installLevelPatches, 60);
+            /* Phaser снимает все таймеры при смене состояния — заводим снова */
+            try {
+                var g = window.AT && window.AT.game;
+                if (g && g.state && g.state.onStateChange) {
+                    g.state.onStateChange.add(function () { lastTick = Date.now(); armTicker(); });
+                }
+            } catch (e) { }
             installLevelPatches();
             M.on("levelComplete", function (info) {
                 if (info && info.level) ammoRefillOnClear(info.level);
