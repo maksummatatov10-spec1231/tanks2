@@ -507,14 +507,16 @@
                 hit.__card = true;
                 hit.events.onInputOver.add(function () {
                     if (!isOpen) return;
-                    t.alpha = .85;
-                    g.add.tween(t.scale).to({ x: t.scale.x * 1.06, y: t.scale.y * 1.06 }, 110,
+                    t.alpha = .9;
+                    var bs = self.__tileScale(num2);
+                    g.add.tween(t.scale).to({ x: bs.x * 1.06, y: bs.y * 1.06 }, 110,
                         Phaser.Easing.Quadratic.Out, true);
                 });
                 hit.events.onInputOut.add(function () {
                     if (!isOpen) return;
                     t.alpha = 1;
-                    g.add.tween(t.scale).to({ x: self.__tileScale(num2).x, y: self.__tileScale(num2).y }, 130,
+                    var bs2 = self.__tileScale(num2);
+                    g.add.tween(t.scale).to({ x: bs2.x, y: bs2.y }, 130,
                         Phaser.Easing.Quadratic.Out, true);
                 });
             })(n, open, TILE_W, TILE_H, x, y, tile);

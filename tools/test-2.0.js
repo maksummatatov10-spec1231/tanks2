@@ -400,6 +400,18 @@ setTimeout(() => {
     ok("вкладка 1.0 показывает 15 карт", hub.tab === 0 && cards() === 15, String(cards()));
     hub.tab = 1; hub.refresh.call(hub);
     ok("вкладка 2.0 показывает 15 карт", cards() === 15, String(cards()));
+    /* плитки уровней — родная графика игры */
+    hub.tab = 0; hub.refresh.call(hub);
+    const tileFrames = hub.content.children.filter(c => c.__frame && /menu\/levels\/buttons\//.test(c.__frame)).map(c => c.__frame);
+    ok("уровни 1.0 нарисованы родными плитками игры", tileFrames.length === 15 &&
+        tileFrames.every(f => /^menu\/levels\/buttons\/(normal|active|disabled)\/\d+\.png$/.test(f)) &&
+        tileFrames.indexOf("menu/levels/buttons/active/1.png") !== -1 &&    // 1 — следующий уровень
+        tileFrames.indexOf("menu/levels/buttons/disabled/15.png") !== -1,  // 15 ещё закрыт
+        "плиток: " + tileFrames.length);
+    hub.tab = 1; hub.refresh.call(hub);
+    const newTiles = hub.content.children.filter(c => c.__frame === "menu/upgrades/parts/frame.png");
+    ok("новые уровни 16–30 рисуются родной табличкой", newTiles.length >= 15, String(newTiles.length));
+
     hub.tab = 2; hub.refresh.call(hub);
     /* в арсенале 6 рядов-табличек (графика) и родные кнопки игры */
     const plates = hub.content.children.filter(c => c.__frame === "menu/upgrades/parts/frame.png").length;
@@ -454,6 +466,11 @@ setTimeout(() => {
     const slot = ui.slots[0];
     slot.events.__down = null;
     ok("кнопка ствола знает свой id", slot.__id === "storm", slot.__id);
+    ok("панель мода — родное окно игры",
+        lvlState.__at2ui.panel.__frame === "game/alerts/abandon.png", String(lvlState.__at2ui.panel.__frame));
+    ok("счётчик ядер — родная табличка",
+        !!lvlState.__at2ui.coreBg && lvlState.__at2ui.coreBg.__frame === "menu/upgrades/parts/frame.png");
+
     lvlState.shutdown.call(lvlState);
     ok("при выходе с уровня слой боя убирается", lvlState.__at2ui === null && lvlState.__at2layer === null);
 
