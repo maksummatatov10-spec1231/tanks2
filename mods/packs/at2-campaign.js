@@ -16,6 +16,7 @@
 
     var FIRST = 16;          // номер первого нового уровня
     var COUNT = 15;
+    var VANILLA = 15;        // играбельных карт в оригинальной кампании
     var TITLE = "Новая кампания";
 
     var LEVELS = [
@@ -43,11 +44,48 @@
         return { number: FIRST + i, name: l[0], terrain: l[1], width: l[2].length, height: l.length - 2 };
     });
 
+    /* В игре 15 играбельных карт кампании, а дальше в её собственном списке
+       лежат служебные карты разработчиков (Fog Test, Performance Test и т.п.).
+       Наши 15 карт должны стоять сразу после кампании — на местах 16..30.
+       Поэтому: если карт ровно 15 — добавляем, иначе заменяем служебные. */
     function patchLevels(levels) {
         if (!levels || levels.__at2campaign) return;
         try { Object.defineProperty(levels, "__at2campaign", { value: true }); } catch (e) { levels.__at2campaign = true; }
-        for (var i = 0; i < LEVELS.length; i++) levels.push(LEVELS[i]);
-        M.log("новых карт добавлено: " + LEVELS.length + " (уровни " + FIRST + "-" + (FIRST + COUNT - 1) + ")");
+        if (levels.length <= VANILLA) {
+            for (var i = 0; i < LEVELS.length; i++) levels.push(LEVELS[i]);
+            M.log("новых карт добавлено: " + LEVELS.length + " (уровни " + FIRST + "-" + (FIRST + COUNT - 1) + ")");
+            return;
+        }
+        for (var j = 0; j < LEVELS.length; j++) levels[FIRST + j - 1] = LEVELS[j];
+        M.log("карты 16-30 заняты кампанией 2.0 (служебные карты игры сдвинуты)");
+    }
+
+    /* Состояния уровней игра создала при запуске — у них уже прописаны карты.
+       Подменяем данные у состояний 16..30 на наши (Level читает this.strings
+       каждый раз при старте, поэтому достаточно заменить строки и имя). */
+    function remapStates() {
+        var g = window.AT && window.AT.game;
+        if (!g || !g.state || !g.state.states) return false;
+        var done = 0;
+        for (var i = 0; i < LEVELS.length; i++) {
+            var n = FIRST + i;
+            var st = g.state.states["Level" + n];
+            if (!st) continue;
+            if (st.__at2map === LEVELS[i]) { done++; continue; }
+            st.__at2map = LEVELS[i];
+            st.strings = LEVELS[i];
+            st.name = LEVELS[i][0];
+            st.number = n;
+            st.index = n - 1;
+            st.width = 0;
+            st.height = 0;
+            done++;
+        }
+        if (done === LEVELS.length) {
+            M.log("кампания 2.0: карты " + FIRST + "-" + (FIRST + COUNT - 1) + " готовы к бою");
+            return true;
+        }
+        return false;
     }
 
     function extendProfile() {
@@ -67,9 +105,13 @@
     M.registerPack({
         id: "at2-campaign",
         name: "Awesome Tanks 2.0 — кампания из 15 новых карт",
-        version: "3.0.0",
+        version: "3.1.0",
         patchLevels: patchLevels,
-        onReady: extendProfile
+        onReady: function () {
+            extendProfile();
+            remapStates();
+            if (M.keepTrying) M.keepTrying(remapStates, 20, 500);
+        }
     });
 
     M.campaign = {

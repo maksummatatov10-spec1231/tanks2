@@ -596,7 +596,7 @@
     M.registerPack({
         id: "at2-weapons",
         name: "Awesome Tanks 2.0 — арсенал",
-        version: "3.0.0",
+        version: "3.1.0",
 
         onReady: function () {
             CLASSES = buildClasses();

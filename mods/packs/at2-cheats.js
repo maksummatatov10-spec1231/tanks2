@@ -23,7 +23,7 @@
     var M = window.MOD;
     if (!M) { console.warn("[at2-cheats] нужен mod-loader.js"); return; }
 
-    var VERSION = "2.0.4";
+    var VERSION = "2.0.5";
     var PREFIX = "at2-cheats";
     var FONT = "Gunplay, 'Trebuchet MS', Arial, sans-serif";
 
@@ -79,12 +79,17 @@
         if (s && s.player) s.player.invincible = on;
         if (godTimer) { clearInterval(godTimer); godTimer = null; }
         if (on) {
-            /* бессмертие должно переживать рестарт уровня и появление игрока */
+            /* Бессмертие: флаг invincible + «замок здоровья».
+               Флаг закрывает попадания, но взрывы/огонь могут вычитать здоровье
+               другим путём, поэтому пока бессмертие включено — возвращаем полное
+               здоровье. Так урон действительно не проходит ни от чего. */
             godTimer = setInterval(function () {
                 if (!cheats().god) { clearInterval(godTimer); godTimer = null; return; }
                 var st = M.state();
-                if (st && st.player) st.player.invincible = true;
-            }, 300);
+                if (!st || !st.player) return;
+                st.player.invincible = true;
+                if (st.player.health < st.player.maxHealth) st.player.health = st.player.maxHealth;
+            }, 150);
         }
     }
 
@@ -128,6 +133,22 @@
         if (v == null) return;
         setCores(Math.max(0, Math.round(v)));
     }
+
+    /* То же самое для щита из модификаторов: пока он активен, здоровье не должно
+       падать — возвращаем его каждый кадр. */
+    var shieldLock = null;
+    function lockShield(on) {
+        if (shieldLock) { clearInterval(shieldLock); shieldLock = null; }
+        if (!on) return;
+        shieldLock = setInterval(function () {
+            var st = M.state();
+            var p = st && st.player;
+            if (!p || !p.__at2shield) { clearInterval(shieldLock); shieldLock = null; return; }
+            p.invincible = true;
+            if (p.health < p.maxHealth) p.health = p.maxHealth;
+        }, 150);
+    }
+    M.lockShield = lockShield;
 
     function applyAll() {
         applyGod();
@@ -486,6 +507,7 @@
         applyGod();
         applyRate();
         applySpeed();
+        lockShield(true);      /* если щит ещё активен после перезапуска карты */
     });
 
     /* ============================== ЭКСПОРТ ============================= */

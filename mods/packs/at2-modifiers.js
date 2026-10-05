@@ -161,6 +161,19 @@
         return null;
     }
 
+    /* Пока щит или ноуклип активны, урон не должен проходить вообще.
+       Родной путь урона (Tank.onBulletHit) сам проверяет this.invincible, но
+       взрывы, огонь и прямые вызовы damage() могут его обойти — поэтому
+       закрываем и сам метод на время эффекта. */
+    function guardDamage(p) {
+        if (p.__at2dmgOrig) return;
+        p.__at2dmgOrig = p.damage;
+        p.damage = function (t) {
+            if (p.__at2shield || p.__at2noclip || p.invincible) return this;
+            return p.__at2dmgOrig.apply(this, arguments);
+        };
+    }
+
     var EFFECTS = {
         /* ------------------------------------------------------------- */
         noclip: {
@@ -173,6 +186,7 @@
                 } catch (e) { st.mask = 0xFFFF; }
                 p.__at2noclip = st;
                 p.invincible = true;
+                guardDamage(p);
                 try {
                     p.body.setCollisionMask(0);
                     p.bodySprite.tint = 0x66fff0;
@@ -219,6 +233,12 @@
             run: function (lvl, p) {
                 p.__at2shield = (p.__at2shield || 0) + 1;
                 p.invincible = true;
+                guardDamage(p);
+                /* Держим здоровье: одного флага invincible мало — взрывы, огонь и
+                   «касание» врага вычитают здоровье мимо него. Пока щит активен,
+                   возвращаем полное здоровье каждый кадр (см. M.lockShield). */
+                if (M.lockShield) M.lockShield(true);
+
                 var ring = null;
                 try {
                     ring = lvl.add.graphics(0, 0);
@@ -469,7 +489,7 @@
     M.registerPack({
         id: "at2-modifiers",
         name: "Awesome Tanks 2.0 — модификаторы",
-        version: "3.0.0",
+        version: "3.1.0",
 
         onReady: function () {
             var g = window.AT.game;

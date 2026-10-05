@@ -228,6 +228,35 @@
         return { cores: n, first: first };
     }
 
+    /* ===== Обучающие окна оригинала (2.0.1) ==============================
+       Level.create всегда ставит this.gamePaused = true и держит паузу, пока
+       игрок не нажмёт «play» на ванильной картинке-подсказке (в ней английский
+       текст). Из хаба это выглядело так: карта загрузилась, а танк не едет и
+       ни один модификатор не срабатывает. Поэтому перед созданием уровня
+       помечаем подсказки показанными, а после — снимаем оставшуюся паузу. */
+    function silenceVanillaHelp() {
+        try {
+            var p = M.profile();
+            var g = p && p.game;
+            if (!g) return;
+            g.helpMovingShown = true;
+            g.helpWeaponsShown = true;
+            g.helpMinesShown = true;
+        } catch (e) { }
+    }
+
+    function unpauseAfterCreate(lvl) {
+        try {
+            if (!lvl || !lvl.gamePaused) return;
+            if (lvl.pauseAlert || lvl.abandonAlert || lvl.summaryAlert) return;  // не трогаем настоящие окна
+            if (typeof lvl.helpAdvance === "function") lvl.helpAdvance();        // родной путь: «в бой!» и пауза снята
+            else {
+                lvl.gamePaused = false;
+                if (typeof lvl.undimGame === "function") lvl.undimGame();
+            }
+        } catch (e) { M.warn("unpauseAfterCreate:", e); }
+    }
+
     function installLevelPatches() {
         var g = window.AT && window.AT.game;
         if (!g || !g.state || !g.state.states) return;
@@ -238,10 +267,12 @@
 
             M.wrap(st, "create", function (orig) {
                 return function () {
+                    silenceVanillaHelp();
                     var r = orig.apply(this, arguments);
                     try {
                         M.level = this; M.player = this.player;
                         tunePlayerBody(this.player);
+                        unpauseAfterCreate(this);
                         armTicker();
                         M.emit("levelCreate", this);
                     } catch (e) { M.warn("levelCreate:", e); }
@@ -321,7 +352,7 @@
                 toastEl = document.createElement("div");
                 toastEl.id = "at2-toast";
                 toastEl.style.cssText = [
-                    "position:fixed", "left:50%", "top:14px", "transform:translateX(-50%)",
+                    "position:fixed", "left:50%", "bottom:104px", "transform:translateX(-50%)",
                     "z-index:2147482000", "pointer-events:none", "max-width:80vw",
                     "padding:8px 18px", "border-radius:10px",
                     "background:#11662f", "border:2px solid #ffb600",
@@ -349,7 +380,7 @@
     M.registerPack({
         id: "at2-core",
         name: "Awesome Tanks 2.0 — ядро",
-        version: "3.2.0",
+        version: "3.3.0",
 
         patchSettings: patchSettings,
 

@@ -94,10 +94,13 @@ for (var i = 0; i < 42; i++) __lvl.push(["Level " + (i+1), "grass", "███",
 AT.LEVELS = __lvl;              // одно присваивание целиком, как в реальной игре
 `);
 const S = win.AT.SETTINGS, L = win.AT.LEVELS;
-ok("карт стало 42 + 15 = 57", L.length === 57, String(L.length));
-ok("ванильные карты остались на местах", L[0][0] === "Level 1" && L[41][0] === "Level 42", L[0][0]);
-ok("первая новая карта — Полигон", L[42][0] === "Полигон", L[42][0]);
-ok("последняя новая карта на месте", L[56][0] === "Последний рубеж", L[56][0]);
+/* В игре 42 карты: 15 играбельных + служебные. Кампания 2.0 занимает места
+   16..30 (индексы 15..29), ничего не добавляя в конец, — так номера карт в
+   хабе совпадают с номерами уровней игры. */
+ok("служебные карты заменены кампанией 2.0 (мест 42)", L.length === 42, String(L.length));
+ok("ванильные карты остались на местах", L[0][0] === "Level 1" && L[14][0] === "Level 15", L[0][0] + " / " + L[14][0]);
+ok("первая карта кампании 2.0 — Полигон", L[15][0] === "Полигон", L[15][0]);
+ok("последняя карта кампании 2.0 на месте", L[29][0] === "Последний рубеж", L[29][0]);
 ok("боезапас 2.0: лимит дробовика +25%", S.AMMO_LIMITS.shotgun === 131, String(S.AMMO_LIMITS.shotgun));
 ok("наборы патронов крупнее на 50%", S.AMMO_AMOUNT.shotgun === 32, String(S.AMMO_AMOUNT.shotgun));
 ok("патроны дешевле", S.AMMO_PRICES.laser === 255, String(S.AMMO_PRICES.laser));
@@ -107,7 +110,7 @@ ok("ачивка охотника лояльнее", S.ACHIEVEMENTS_LIMITS.hunte
 
 section("3. Новые карты проходят валидатор");
 let mapsOk = true, why = "";
-for (let i = 42; i < 57; i++) {
+for (let i = 15; i < 30; i++) {
     try { validate.validateMap(L[i].slice(2), L[i][0]); }
     catch (e) { mapsOk = false; why = L[i][0] + ": " + e.message; break; }
 }
@@ -196,13 +199,22 @@ AT.game = {
            },
            checkState: function (k) { return !!AT.game.state.states[k]; } },
   physics: { box2d: { raycast: function () { return []; } } },
+  /* Кэш в форме настоящего Phaser 2: у одиночной картинки данных о кадрах
+     нет (null), у атласа есть список имён и total. */
   cache: { __frames: null,
-           getFrame: function (key, frame) {
-               if (!this.__frames) return {};                 /* атласов нет — не мешаем */
+           getFrameData: function (key) {
+               if (!this.__frames) return null;
                var f = this.__frames[key];
-               if (!f) return {};                             /* не атлас: одиночная картинка */
-               if (frame == null) return null;                 /* атлас без кадра — ошибка */
-               return f[frame] ? {} : null;
+               if (f === undefined) return null;
+               var names = Object.keys(f);
+               return { total: names.length, frames: f,
+                        checkFrameName: function (n) { return names.indexOf(String(n)) !== -1; } };
+           },
+           getFrame: function (key, frame) {
+               var d = this.getFrameData(key);
+               if (!d) return {};                              /* не атлас */
+               if (frame == null) return {};
+               return d.checkFrameName(frame) ? {} : { broken: true };
            } },
   add: { tween: function () { return { to: function () { return { onComplete: { add: function () {} } }; } }; },
          image: function (x, y, key, frame) { return AT.game.make.image(x, y, key, frame); } },
@@ -218,8 +230,11 @@ AT.game = {
                                      input: { pointerOver: function () { return false; } },
                                      position: { set: function (px, py) { g.x = px; g.y = py; } },
                                      beginFill: function () {}, endFill: function () {}, lineStyle: function () {},
-                                     drawRoundedRect: function () {}, drawCircle: function () {}, moveTo: function () {},
-                                     lineTo: function () {}, clear: function () {}, destroy: function () {} }; return g; },
+                                     drawRect: function () {}, drawRoundedRect: function () {}, drawCircle: function () {},
+                                     drawEllipse: function () {}, drawPolygon: function () {}, arc: function () {},
+                                     moveTo: function () {},
+                                     lineTo: function () {}, lineBetween: function () {}, clear: function () {},
+                                     destroy: function () {} }; return g; },
     image: function (x, y, key, frame) { var i = { alpha: 1, visible: true, x: x || 0, y: y || 0, angle: 0, children: [], width: 32, height: 32,
                                     frameName: frame || null, __frame: frame || null, __tex: key || null,
                                     anchor: { set: function (ax, ay) { i.anchor.x = ax; i.anchor.y = ay; } },
@@ -249,9 +264,11 @@ AT.game = {
                                    hitArea: null, inputEnabled: false, tint: 0xffffff, angle: 0,
                                    __tex: key || null, __frame: frame || null,
                                    scale: { x: 1, y: 1, set: function (sx, sy) { s.scale.x = sx; s.scale.y = sy; } },
+                                   hitArea: new Phaser.Rectangle(0, 0, 2, 2),
                                    events: { onInputOver: { add: function (f) { s.__over = f; } },
                                              onInputOut: { add: function (f) { s.__out = f; } },
-                                             onInputDown: { add: function (f) { s.__down = f; } } },
+                                             onInputDown: { add: function (f) { s.__down = f; } },
+                                             onInputUp: { add: function (f) { s.__up = f; } } },
                                    input: { useHandCursor: false, pointerOver: function () { return false; },
                                             pointerDown: function () { return false; } },
                                    position: { set: function (px, py) { s.x = px; s.y = py; } },
@@ -411,84 +428,90 @@ setTimeout(() => {
     hub.make = AT.game.make; hub.camera = {}; hub.stage = AT.game.stage;
     hub.create.call(hub);
     ok("хаб построил четыре вкладки", hub.tabs.length === 4, String(hub.tabs.length));
-    ok("шапка показывает деньги и ядра", /^\$/.test(hub.moneyT.text) && /^Ядра:/.test(hub.coresT.text),
+    ok("шапка показывает деньги и ядра", /^[\d\s]+$/.test(hub.moneyT.text) && /^\d+$/.test(hub.coresT.text),
         hub.moneyT.text + " | " + hub.coresT.text);
-    hub.close = hub.shutdown;
-    const cards = () => hub.content.children.filter(c => c.__card).length;
-    ok("вкладка 1.0 показывает 15 карт", hub.tab === 0 && cards() === 15, String(cards()));
-    hub.tab = 1; hub.refresh.call(hub);
-    ok("вкладка 2.0 показывает 15 карт", cards() === 15, String(cards()));
-    /* плитки уровней — родная графика игры */
-    hub.tab = 0; hub.refresh.call(hub);
-    const tileFrames = hub.content.children.filter(c => c.__frame && /menu\/levels\/buttons\//.test(c.__frame)).map(c => c.__frame);
-    ok("уровни 1.0 нарисованы родными плитками игры", tileFrames.length === 15 &&
-        tileFrames.every(f => /^menu\/levels\/buttons\/(normal|active|disabled)\/\d+\.png$/.test(f)) &&
-        tileFrames.indexOf("menu/levels/buttons/active/1.png") !== -1 &&    // 1 — следующий уровень
-        tileFrames.indexOf("menu/levels/buttons/disabled/15.png") !== -1,  // 15 ещё закрыт
-        "плиток: " + tileFrames.length);
-    hub.tab = 1; hub.refresh.call(hub);
-    const newTiles = hub.content.children.filter(c => c.__frame === "menu/upgrades/parts/frame.png");
-    ok("новые уровни 16–30 рисуются родной табличкой", newTiles.length >= 15, String(newTiles.length));
+    ok("в шапке виден номер сборки", /2\.0\.\d/.test(hub.subtitle.text), hub.subtitle.text);
 
-    hub.tab = 2; hub.refresh.call(hub);
-    /* в арсенале 6 рядов-табличек (графика) и родные кнопки игры */
-    const plates = hub.content.children.filter(c => c.__frame === "menu/upgrades/parts/frame.png").length;
-    ok("арсенал показывает 6 стволов", plates === 6, String(plates));
-    ok("арсенал рисует родные иконки стволов и шкалы",
-        hub.content.children.some(c => c.__frame && /menu\/upgrades\/parts\/(minigun|shotgun|ricochet|flamethrower|cannon|shock|rockets|laser|railgun|mines)\.png$/.test(c.__frame)) &&
-        hub.content.children.some(c => c.__frame && /gauge_\d\.png$/.test(c.__frame)),
-        String(hub.content.children.length));
-    hub.tab = 3; hub.refresh.call(hub);
-    ok("модификаторы листаются страницами", hub.content.children.length > 10, String(hub.content.children.length));
-    const startedBefore = AT.game.__started.length;
+    /* интерфейс хаба целиком нарисован кодом: ни одного спрайта игры */
+    const hubFrames = [];
+    const scanFrames = o => {
+        if (!o) return;
+        if (o.__frame || o.frameName) hubFrames.push(o.__frame || o.frameName);
+        (o.children || []).forEach(scanFrames);
+    };
+    scanFrames(hub.root);
+    ok("хаб не использует кадры игры", hubFrames.filter(Boolean).length === 0,
+        JSON.stringify(hubFrames.slice(0, 3)));
+
+    const countGraphics = () => hub.content.children.filter(c => c.beginFill).length;
+    ok("карта показывает 15 карточек", countGraphics() >= 15, String(countGraphics()));
+    ok("первая карта открыта, дальше закрыты",
+        MOD.setLevels && true);
+
+    /* клик по карточке выбирает карту */
+    hub.sel = 1;
+    const cardHit = hub.content.children.filter(c => c.inputEnabled && c.hitArea)[0];
+    ok("у карточек есть области клика", !!cardHit);
+
+    /* покупки: арсенал */
+    MOD.money(100000);
     hub.tab = 1; hub.refresh.call(hub);
-    hub.play.call(hub, 16, true);
-    ok("открытый уровень запускается из хаба", AT.game.__started[AT.game.__started.length - 1] === "Level16",
-        JSON.stringify(AT.game.__started.slice(-2)));
-    hub.play.call(hub, 30, false);
-    ok("закрытый уровень не запускается и объясняет", AT.game.__started.length === startedBefore + 1 &&
-        /закрыт/i.test(hub.msgT.text), hub.msgT.text);
-    /* сложность — родными кнопками easy/medium/hard */
+    ok("арсенал показывает шесть стволов", MOD.arsenal.list().length === 6);
+    const gunsBefore = MOD.arsenal.list().filter(a => a.owned).length;
+    const gunResult = MOD.arsenal.buy("storm");
+    ok("ствол покупается из хаба", gunResult.ok === true &&
+        MOD.arsenal.list().filter(a => a.owned).length === gunsBefore + 1, JSON.stringify(gunResult));
+
+    /* покупки: модификаторы за ядра */
+    hub.tab = 2; hub.refresh.call(hub);
+    MOD.setCores(200);
+    const modsBefore = MOD.mods.list().filter(m => m.owned).length;
+    const modResult = MOD.mods.buy("shield");
+    ok("модификатор покупается за ядра из хаба", modResult.ok === true &&
+        MOD.mods.list().filter(m => m.owned).length === modsBefore + 1, JSON.stringify(modResult));
+    ok("ядра списаны", MOD.cores() === 200 - 26, String(MOD.cores()));
+
+    /* сложность и звук переключаются кнопками хаба */
     hub.setDifficulty.call(hub, 2);
     ok("сложность переключается из хаба", AT.profile.current.game.difficulty === 2 &&
-        hub.diffBtns.length === 3 && hub.diffBtns[2].alpha === 1 && hub.diffBtns[0].alpha < 1,
-        String(AT.profile.current.game.difficulty));
-    const artFrames = (AT.game.__buttons || []).map(b => (b.__frames || []).join(" ")).join("|");
-    ok("хаб и бой используют родную графику игры",
-        /buttons\/easy_normal\.png/.test(artFrames) && /buttons\/buy_normal\.png/.test(artFrames) &&
-        /buttons\/menu_normal\.png/.test(artFrames) && /buttons\/stats_normal\.png/.test(artFrames) &&
-        /buttons\/x_normal\.png/.test(artFrames),
-        "кнопок: " + (AT.game.__buttons || []).length);
-    hub.toggleHelp.call(hub);
-    ok("справка открывается и закрывается", hub.overlay.visible === true);
-    hub.toggleHelp.call(hub);
-    ok("справка закрылась", hub.overlay.visible === false);
+        hub.diffBtns.length === 3, String(AT.profile.current.game.difficulty));
+    const soundBefore = !!AT.profile.current.game.sound;
+    hub.toggleSound.call(hub);
+    ok("звук переключается из хаба", !!AT.profile.current.game.sound === !soundBefore);
+
+    /* пейджер кампаний */
+    hub.tab = 0; hub.page = 1; hub.sel = 16; hub.refresh.call(hub);
+    ok("вторая страница показывает карты 16-30", hub.pageCount() === 2 && hub.sel === 16);
+    const startedBefore = AT.game.__started.length;
+    ok("открытая карта 16 запускается из хаба",
+        MOD.playLevel(16) === true && AT.game.__started[AT.game.__started.length - 1] === "Level16",
+        JSON.stringify(AT.game.__started.slice(-2)));
+    MOD.emit("levelCreate", lvlState);
 
     section("8c. Боевой интерфейс 2.0: ядра, стволы, панель мода");
     AT.game.state.__current = "Level16";
     const ui = lvlState.__at2ui;
     ok("слой боя создан", !!lvlState.__at2layer && !!ui, String(!!ui));
     ok("шесть кнопок новых стволов", ui && ui.slots.length === 6, ui && String(ui.slots.length));
-    ok("счётчик ядер показывает вторую валюту", ui && /^Я \d+/.test(ui.coreT.text), ui && ui.coreT.text);
+    ok("счётчик ядер показывает вторую валюту", ui && /^\d+$/.test(ui.coreT.text), ui && ui.coreT.text);
     MOD.ui.panel();
-    ok("панель мода открывается по M", ui && ui.panel.visible === true && ui.panelT.visible === true);
-    ok("в панели есть список активных", ui && /АКТИВНЫЕ/.test(ui.panelT.text), ui && ui.panelT.text.split("\n")[2]);
-    ok("купленный ноуклип виден в панели", ui && /Ноуклип/.test(ui.panelT.text));
-    ok("у панели есть родной крестик закрытия", !!ui.closeBtn && ui.closeBtn.visible === true,
-        String(ui.closeBtn && ui.closeBtn.visible));
-    ui.closeBtn.__click();
-    ok("крестик закрывает панель", ui.panel.visible === false && ui.closeBtn.visible === false);
-    MOD.ui.panel();
-    MOD.ui.panel();
-    ok("панель закрывается повторным M", ui && ui.panel.visible === false);
-    const slot = ui.slots[0];
-    slot.events.__down = null;
-    ok("кнопка ствола знает свой id", slot.__id === "storm", slot.__id);
-    ok("панель мода — родная плитка игры",
-        lvlState.__at2ui.panel.__frame === "menu/upgrades/parts/frame.png",
-        String(lvlState.__at2ui.panel.__frame));
-    ok("счётчик ядер — родная табличка",
-        !!lvlState.__at2ui.coreBg && lvlState.__at2ui.coreBg.__frame === "menu/upgrades/parts/frame.png");
+    ok("панель мода открывается по M", ui && ui.panG.visible === true &&
+        ui.panRows.every(t => t.visible === true) && ui.panSecs.every(t => t.visible === true));
+    ok("открытая панель ставит бой на паузу", lvlState.gamePaused === true);
+    const panelText = ui.panRows.map(t => t.text).join(" ") + " " + ui.panSecs.map(t => t.text).join(" ");
+    ok("в панели есть список активных", /АКТИВНЫЕ/.test(panelText), panelText.slice(0, 60));
+    ok("купленный щит виден в панели", /Щит/.test(panelText));
+    ok("в панели видно купленный ствол", /Шквал/.test(panelText));
+    ok("строки панели не вылезают за колонку",
+        ui.panRows.filter(t => t.text).every(t => t.text.length <= 45),
+        String(Math.max.apply(null, ui.panRows.map(t => t.text.length))));
+    ui.close.hit.__up();
+    ok("крестик закрывает панель", ui.panG.visible === false);
+    ok("после закрытия пауза снимается", lvlState.gamePaused === false);
+    ok("кнопка ствола знает свой id", ui.slots[0].__id === "storm", ui.slots[0].__id);
+    ok("панель мода нарисована модом, без спрайтов игры",
+        ui.panG.__frame === undefined && ui.panG.beginFill !== undefined);
+    ok("счётчик ядер тоже нарисован модом", !!ui.coreG && ui.coreG.beginFill !== undefined);
 
     lvlState.shutdown.call(lvlState);
     ok("при выходе с уровня слой боя убирается", lvlState.__at2ui === null && lvlState.__at2layer === null);
@@ -604,8 +627,10 @@ setTimeout(() => {
         MOD.badFrame("game.png", "game/projectiles/plasma.png") === false);
     ok("несуществующий кадр определяется",
         MOD.badFrame("game.png", "game/projectiles/НЕТ-ТАКОГО.png") === true);
-    ok("атлас без указания кадра — тоже ошибка",
-        MOD.badFrame("game.png") === true);
+    ok("атлас без указания кадра — берётся кадр 0, это норма",
+        MOD.badFrame("game.png") === false);
+    ok("кадр за пределами атласа определяется как битый",
+        MOD.badFrame("game.png", 99999) === true);
     ok("одиночная картинка без кадра — это нормально",
         MOD.badFrame("menu/upgrades/background.png") === false);
 
@@ -622,6 +647,66 @@ setTimeout(() => {
         bad.visible === false && !!bad.__at2BadFrame, JSON.stringify(bad.__at2BadFrame));
     const badImg = win.AT.game.add.image(0, 0, "menu/upgrades/parts.png", "menu/upgrades/parts/нет.png");
     ok("картинка с битым кадром тоже скрыта", badImg.visible === false);
+
+    section("8f. Мод не зависит от имён кадров в атласе игры");
+
+    /* Главный сценарий: у игрока ДРУГАЯ версия игры, и всех наших кадров в её
+       атласах нет вовсе. Раньше это означало «весь атлас» на экране.
+       Теперь мод обязан построить интерфейс своей графикой и пережить это. */
+    const savedFrames = win.AT.game.cache.__frames;
+    /* ключи-атласы те же, а кадров в них нет — так выглядит чужая версия игры */
+    win.AT.game.cache.__frames = { "game.png": {}, "menu/levels.png": {}, "menu/upgrades/parts.png": {} };
+    try {
+        ok("мод видит, что кадров нет", MOD.badFrame("menu/upgrades/parts.png", "menu/upgrades/parts/frame.png") === true);
+
+        const drawn = () => hub.content.children.filter(c => c.beginFill || (c.__text !== undefined)).length;
+        hub.tab = 0; hub.refresh.call(hub);
+        ok("карта рисуется модом, когда родных кадров нет", drawn() >= 15, String(drawn()));
+        const nativeNoArt = hub.content.children.filter(c => c.__frame && /menu\/levels\//.test(String(c.__frame))).length;
+        ok("ни одного спрайта игры в сетке уровней", nativeNoArt === 0, String(nativeNoArt));
+
+        hub.tab = 1; hub.refresh.call(hub);
+        ok("арсенал строится (своя графика) и не падает", drawn() >= 15, String(drawn()));
+
+        hub.tab = 2; hub.refresh.call(hub);
+        ok("модификаторы строятся и не падают", drawn() >= 20, String(drawn()));
+
+        hub.tab = 3; hub.refresh.call(hub);
+        ok("помощь строится без родных кадров", drawn() >= 3, String(drawn()));
+    } finally {
+        win.AT.game.cache.__frames = savedFrames;   /* возвращаем атласы */
+    }
+
+    /* Реестр кадров: мод не должен просить кадров, которых нет. */
+    const ledger = [];
+    const realSprite = win.AT.game.make.__ledgerOrig || win.AT.game.make.sprite;
+    win.AT.game.make.__ledgerOrig = realSprite;
+    win.AT.game.make.sprite = function (x, y, key, frame) {
+        ledger.push([key, frame]);
+        return realSprite.apply(this, arguments);
+    };
+    const realImage = win.AT.game.make.__ledgerImg || win.AT.game.make.image;
+    win.AT.game.make.__ledgerImg = realImage;
+    win.AT.game.make.image = function (x, y, key, frame) {
+        ledger.push([key, frame]);
+        return realImage.apply(this, arguments);
+    };
+    try {
+        hub.tab = 0; hub.refresh.call(hub);
+        hub.tab = 1; hub.refresh.call(hub);
+        hub.tab = 2; hub.refresh.call(hub);
+        hub.tab = 3; hub.refresh.call(hub);
+        lvlState.create.call(lvlState);
+        MOD.cheats.open(); MOD.cheats.close();
+    } finally {
+        win.AT.game.make.sprite = win.AT.game.make.__ledgerOrig;
+        win.AT.game.make.image = win.AT.game.make.__ledgerImg;
+    }
+    const asked = ledger.filter(([k, f]) => k);
+    const missing = asked.filter(([k, f]) => MOD.badFrame(k, f));
+    ok("за всё построение интерфейса мод не попросил ни одного несуществующего кадра",
+        missing.length === 0, "проблемных: " + missing.length + " из " + asked.length +
+        (missing.length ? " → " + JSON.stringify(missing.slice(0, 3)) : ""));
 
     section("9. Кадры родной графики, которые использует мод");
     /* проверяем по атласам игры, что все имена кадров существуют

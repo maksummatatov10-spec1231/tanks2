@@ -170,16 +170,29 @@
 
     var warnedFrames = {};
 
-    function badFrame(cache, key, frame) {
+    /* Есть ли такой кадр в кэше?
+       Важно: у Phaser 2 cache.getFrame(key, TYPE) — второй аргумент это ТИП
+       кэша, а не имя кадра (в 2.0.4 из-за этого проверка молча не работала).
+       Правильный путь — getFrameData(key): у одиночной картинки данных о
+       кадрах нет, у атласа есть список имён. */
+    function frameOk(cache, key, frame) {
         try {
-            if (!cache || !cache.getFrame) return false;
-            if (!frame && frame !== 0) {
-                /* кадра не передали: ругаемся только если это атлас
-                   (у одиночной картинки базовый кадр есть всегда) */
-                return !cache.getFrame(key);
+            if (!cache || !key || typeof cache.getFrameData !== "function") return true;
+            var data = cache.getFrameData(key);
+            if (!data) return true;                      /* не атлас — проверять нечего */
+            var f = (frame === undefined || frame === null || frame === "") ? 0 : frame;
+            if (typeof f === "number" || /^\d+$/.test(String(f))) {
+                var idx = parseInt(f, 10);
+                return idx >= 0 && idx < (data.total || 0);
             }
-            return !cache.getFrame(key, frame);
-        } catch (e) { return false; }
+            return data.checkFrameName(String(f)) === true;
+        } catch (e) {
+            return true;                                  /* не уверены — не мешаем игре */
+        }
+    }
+
+    function badFrame(cache, key, frame) {
+        return !frameOk(cache, key, frame);
     }
 
     function guardFactories() {
@@ -187,33 +200,67 @@
         if (!g || g.__at2FactoriesGuarded) return false;
         g.__at2FactoriesGuarded = true;
 
-        var names = ["sprite", "image", "button", "tileSprite"];
+        /* у button кадр лежит не 4-м аргументом: (x, y, key, callback, ctx,
+           over, out, down, up) — поэтому индексы у каждой фабрики свои */
+        var specs = [
+            { name: "sprite", frameAt: 3 },
+            { name: "image", frameAt: 3 },
+            { name: "button", frameAt: 5 },
+            { name: "tileSprite", frameAt: 4 }
+        ];
         ["make", "add"].forEach(function (hub) {
             var target = g[hub];
             if (!target) return;
-            names.forEach(function (name) {
-                var orig = target[name];
+            specs.forEach(function (spec) {
+                var orig = target[spec.name];
                 if (typeof orig !== "function") return;
-                target[name] = function (x, y, key, frame) {
+                target[spec.name] = function (x, y, key) {
                     var obj = orig.apply(this, arguments);
                     try {
+                        var frame = arguments[spec.frameAt];
                         if (badFrame(g.cache, key, frame)) {
-                            var mark = String(key) + "|" + String(frame);
-                            if (!warnedFrames[mark]) {
-                                warnedFrames[mark] = true;
-                                warn("кадра нет в атласе: " + key + " / " + frame +
-                                     " — спрайт скрыт (иначе Phaser нарисовал бы весь атлас)");
-                            }
-                            obj.visible = false;
-                            obj.__at2BadFrame = mark;
+                            hide(obj, key, frame);
                         }
                     } catch (e) { }
                     return obj;
                 };
             });
         });
-        log("защита кадров включена (make/add: sprite, image, button, tileSprite)");
+
+        /* loadTexture / setFrame переключают кадр уже у готового спрайта — это
+           ещё один путь получить «весь атлас», поэтому закрываем и его */
+        var Sprite = global.Phaser && global.Phaser.Sprite;
+        if (Sprite && Sprite.prototype && typeof Sprite.prototype.loadTexture === "function" &&
+            !Sprite.prototype.__at2Guarded) {
+            Sprite.prototype.__at2Guarded = true;
+            var origLoad = Sprite.prototype.loadTexture;
+            Sprite.prototype.loadTexture = function (key, frame) {
+                try {
+                    if (key && badFrame(g.cache, key, frame)) {
+                        hide(this, key, frame);     // остаёмся на прежней текстуре
+                        return this;
+                    }
+                } catch (e) { }
+                return origLoad.apply(this, arguments);
+            };
+        }
+
+        log("защита кадров включена (make/add/loadTexture: битый кадр не рисуется)");
         return true;
+    }
+
+    function hide(obj, key, frame) {
+        var mark = String(key) + "|" + String(frame);
+        if (!warnedFrames[mark]) {
+            warnedFrames[mark] = true;
+            warn("кадра нет в атласе: " + key + " / " + frame +
+                 " — спрайт скрыт (иначе Phaser нарисовал бы весь атлас)");
+        }
+        if (obj) {
+            try { obj.visible = false; } catch (e) { }
+            try { obj.__at2BadFrame = mark; } catch (e) { }
+        }
+        return obj;
     }
 
     /* эмиттеры частиц (emitParticle) — тоже частая причина «всего атласа» */
