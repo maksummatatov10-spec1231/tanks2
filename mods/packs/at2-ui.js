@@ -29,7 +29,7 @@
     var FONT = 'Gunplay, Arial, Helvetica, sans-serif';
     /* Номер сборки виден в шапке хаба и в разделе «Помощь» — по нему игрок
        сверяет, что скачал именно ту версию мода. */
-    var BUILD = "2.0.5";
+    var BUILD = "2.0.6";
 
     /* ---------------------------- палитра ------------------------------ */
     /* Взята из родной графики игры: зелёные таблички, золото кнопок. */
@@ -157,7 +157,12 @@
         '←':'00000/00100/01000/11111/01000/00100/00000',
         '©':'01110/10001/10111/10101/10111/10001/01110',
         '"':'01010/01010/00000/00000/00000/00000/00000',
-        '\'':'00100/00100/00000/00000/00000/00000/00000'
+        '\'':'00100/00100/00000/00000/00000/00000/00000',
+        '<':'00010/00100/01000/10000/01000/00100/00010',
+        '>':'01000/00100/00010/00001/00010/00100/01000',
+        '\u2039':'00010/00100/01000/01000/01000/00100/00010',
+        '\u203A':'01000/00100/00010/00010/00010/00100/01000',
+        '\u00B7':'00000/00000/00000/00100/00000/00000/00000'
     };
 
 
@@ -242,8 +247,12 @@
             g.__w = w;
             g.__h = h;
             var ox = -g.__ax * w, oy = -g.__ay * h;
-            for (i = 0; i < lines.length; i++) {                 /* тень */
-                drawLine(g, lines[i], ox + u, oy + i * (GH + 2) * u + u, u, 0x06180d, 1);
+            /* Тень рисуем только на крупном шрифте: при u = 1 она сливается с
+               буквами и мелкий текст выглядит грязным. */
+            if (u >= 2) {
+                for (i = 0; i < lines.length; i++) {
+                    drawLine(g, lines[i], ox + u, oy + i * (GH + 2) * u + u, u, 0x06180d, 1);
+                }
             }
             for (i = 0; i < lines.length; i++) {                 /* сам текст */
                 drawLine(g, lines[i], ox, oy + i * (GH + 2) * u, u, g.__color, 1);
@@ -378,6 +387,21 @@
             },
             setEnabled: function (on) { wdg.enabled = !!on; hitObj.input.useHandCursor = !!on; return wdg; },
             setAlpha: function (a) { g.alpha = a; t.alpha = a; return wdg; },
+            /* перекрасить кнопку (нужно для подсветки активного ствола в бою) */
+            setColours: function (o) {
+                o = o || {};
+                try {
+                    g.clear();
+                    plate(g, 0, 0, w, h, {
+                        fill: o.fill == null ? P.tile : o.fill,
+                        dark: o.dark == null ? P.tileDark : o.dark,
+                        edge: o.edge == null ? P.tileEdge : o.edge,
+                        top: o.top, radius: o.radius
+                    });
+                    if (o.color) t.fill = o.color;
+                } catch (e) { }
+                return wdg;
+            },
             setVisible: function (v) { g.visible = v; t.visible = v; hitObj.visible = v; return wdg; },
             destroy: function () { try { g.destroy(); t.destroy(); hitObj.destroy(); } catch (e) { } }
         };
@@ -493,8 +517,21 @@
             return (m && m[1]) || "";
         } catch (e) { return ""; }
     }
+    /* Имя карты. Родные уровни в игре названы по-английски служебными
+       строками ("Level 1"), поэтому для кампании 1.0 показываем русское
+       название, а для кампании 2.0 берём имя из собственного набора карт. */
+    var VANILLA_NAMES = [
+        "Полигон", "Тренировка", "Переправа", "Засада", "Колодец",
+        "Развалины", "Ущелье", "Склады", "Река", "Бункер",
+        "Перекрёсток", "Пустошь", "Осада", "Цитадель", "Арсенал"
+    ];
     function mapName(n) {
         try {
+            if (M.campaign && M.campaign.nameOf) {
+                var own = M.campaign.nameOf(n);
+                if (own) return own;
+            }
+            if (n >= 1 && n <= VANILLA_MAPS) return VANILLA_NAMES[n - 1];
             var m = window.AT.LEVELS[n - 1];
             return (m && m[0]) || ("Уровень " + n);
         } catch (e) { return "Уровень " + n; }
@@ -526,6 +563,28 @@
         var max = Math.max(1, Math.floor(maxPx / per));
         if (str.length <= max) return str;
         return str.slice(0, Math.max(1, max - 2)) + "..";
+    }
+
+    /* Разложить описание на 1–2 строки под ширину textW (шрифт 5x7, мелкий). */
+    function fitWrap(str, textW, maxLines) {
+        var per = Math.max(8, Math.floor(textW / ((GW + GAP) * 1)));   // мелкий шрифт = 1 единица
+        var words = String(str == null ? "" : str).split(/\s+/);
+        var lines = [], cur = "";
+        for (var i = 0; i < words.length; i++) {
+            var cand = cur ? cur + " " + words[i] : words[i];
+            if (cand.length <= per) cur = cand;
+            else { if (cur) lines.push(cur); cur = words[i]; }
+            if (lines.length >= maxLines) break;
+        }
+        if (cur && lines.length < maxLines) lines.push(cur);
+        if (lines.length === maxLines) {
+            var rest = words.slice(lines.join(" ").split(/\s+/).length);
+            if (rest.length) {
+                var tail = lines[maxLines - 1];
+                lines[maxLines - 1] = tail.slice(0, Math.max(1, per - 2)) + "..";
+            }
+        }
+        return lines.join("\n");
     }
 
     function Hub() {
@@ -866,10 +925,10 @@
             this.content.add(txt(g, VW / 2, 280, "\u0410\u0440\u0441\u0435\u043D\u0430\u043B \u043D\u0435 \u043F\u043E\u0434\u043A\u043B\u044E\u0447\u0451\u043D", 17, T.bad, [.5, 0]));
             return;
         }
-        var perCol = 3, rowH = 100;
+        var perCol = 3, rowH = 110, gap = 6;
         list.forEach(function (a, i) {
             var col = Math.floor(i / perCol), row = i % perCol;
-            var x = 32 + col * 460, y = 146 + row * (rowH + 6);
+            var x = 32 + col * 460, y = 146 + row * (rowH + gap);
             self.rowWeapon(a, x, y, 444, rowH);
         });
     };
@@ -880,55 +939,63 @@
         plate(gg, x, y, w, h, { fill: a.owned ? P.panelIn : 0x123a22, dark: 0x0a2f1a, edge: 0x08240f, flat: true });
         this.content.add(gg);
 
+        /* клавиша ствола */
         var bg = g.make.graphics(0, 0);
-        rrect(bg, x + 10, y + 10, 34, 34, 7, a.owned ? P.gold : 0x25402c, 1);
+        rrect(bg, x + 12, y + 13, 40, 40, 8, a.owned ? P.gold : 0x25402c, 1);
         this.content.add(bg);
-        this.content.add(txt(g, x + 27, y + 27, a.key || "?", 17, a.owned ? T.dark : T.dim, [.5, .5]));
+        this.content.add(txt(g, x + 32, y + 33, a.key || "?", 19, a.owned ? T.dark : T.dim, [.5, .5]));
 
-        this.content.add(txt(g, x + 56, y + 12, a.name, 17, a.owned ? T.white : T.gold));
-        this.content.add(txt(g, x + 56, y + 40, a.owned
-            ? ("\u0443\u0440\u043E\u0432\u0435\u043D\u044C " + (a.level + 1) + " \u0438\u0437 4")
-            : a.desc, 10, T.dim));
+        var bx = x + w - 146;                 /* левая граница кнопок */
+        var textW = bx - (x + 64) - 14;
 
-        var line3 = a.owned
+        this.content.add(txt(g, x + 64, y + 12, a.name, bestSize(a.name, [17, 16, 14], textW), a.owned ? T.white : T.gold));
+
+        /* описание: две строки мелким шрифтом, длинное — обрезаем */
+        var d = txt(g, x + 64, y + 40, fitWrap(a.desc, textW, 2), 9, T.dim);
+        this.content.add(d);
+
+        var stat = a.owned
             ? (a.maxAmmo !== Infinity ? ("\u043F\u0430\u0442\u0440\u043E\u043D\u044B: " + a.ammo + " / " + a.maxAmmo) : "\u043F\u0430\u0442\u0440\u043E\u043D\u044B \u0431\u0435\u0441\u043A\u043E\u043D\u0435\u0447\u043D\u044B")
             : ("\u0446\u0435\u043D\u0430: $ " + moneyFmt(a.price));
-        this.content.add(txt(g, x + 56, y + 60, line3, 10, a.owned ? T.dim : T.gold));
-        this.content.add(txt(g, x + 56, y + 78, a.owned
-            ? (a.price != null ? ("\u0443\u043B\u0443\u0447\u0448\u0435\u043D\u0438\u0435: $ " + moneyFmt(a.price)) : "\u043C\u0430\u043A\u0441\u0438\u043C\u0443\u043C")
-            : "\u043A\u043B\u0430\u0432\u0438\u0448\u0430 " + a.key + " \u0432 \u0431\u043E\u044E", 10, T.dim));
+        this.content.add(txt(g, x + 64, y + h - 40, stat, 10, a.owned ? T.dim : T.gold));
+        this.content.add(txt(g, x + 64, y + h - 22, a.owned
+            ? (a.price != null ? ("\u0443\u043B\u0443\u0447\u0448\u0435\u043D\u0438\u0435: $ " + moneyFmt(a.price)) : "\u0443\u043B\u0443\u0447\u0448\u0435\u043D\u0438\u0435: \u043C\u0430\u043A\u0441\u0438\u043C\u0443\u043C")
+            : ("\u0432 \u0431\u043E\u044E \u2014 \u043A\u043B\u0430\u0432\u0438\u0448\u0430 " + a.key), 9, T.dim));
 
-        var gold = { fill: P.gold, color: T.dark, dark: P.goldDark, edge: 0x6b4b00, top: P.goldSoft, size: 11 };
-        var grey = { fill: 0x4c5a4c, color: T.dim, dark: 0x334033, edge: 0x223022, top: 0x6a7a6a, size: 11 };
-
-        if (a.owned && a.ammoPrice) {
-            var canAmmo = money() >= a.ammoPrice;
-            button(g, this.content, x + w - 130, y + h - 40, 118, 30, "\u041F\u0410\u0422\u0420\u041E\u041D\u042B", function () {
-                var r = M.arsenal.buyAmmo(a.id);
-                self.msg(r && r.ok ? ("\u041F\u0430\u0442\u0440\u043E\u043D\u044B: " + r.ammo + " / " + r.max) : ("\u041D\u0435 \u0432\u044B\u0448\u043B\u043E: " + ((r && r.reason) || "?")),
-                    r && r.ok ? T.ok : T.bad);
-                self.refresh();
-            }, this, Object.assign({}, canAmmo ? gold : grey));
-        }
+        var gold = { fill: P.gold, color: T.dark, dark: P.goldDark, edge: 0x6b4b00, top: P.goldSoft, size: 12 };
+        var grey = { fill: 0x4c5a4c, color: T.dim, dark: 0x334033, edge: 0x223022, top: 0x6a7a6a, size: 12 };
 
         if (!a.owned) {
             var afford = money() >= a.price;
-            button(g, this.content, x + w - 130, y + 12, 118, 34, "\u041A\u0423\u041F\u0418\u0422\u042C", function () {
+            button(g, this.content, bx, y + 30, 134, 44, "\u041A\u0423\u041F\u0418\u0422\u042C", function () {
                 var r = M.arsenal.buy(a.id);
                 self.msg(r && r.ok ? ("\u041A\u0443\u043F\u043B\u0435\u043D\u043E: " + a.name) : ("\u041D\u0435 \u0432\u044B\u0448\u043B\u043E: " + ((r && r.reason) || "?")),
                     r && r.ok ? T.ok : T.bad);
                 self.refresh();
             }, this, Object.assign({}, afford ? gold : grey));
-        } else if (a.price != null) {
-            var afford2 = money() >= a.price;
-            button(g, this.content, x + w - 130, y + 12, 118, 34, "\u0423\u041B\u0423\u0427\u0428\u0418\u0422\u042C", function () {
-                var r = M.arsenal.upgrade(a.id);
-                self.msg(r && r.ok ? (a.name + ": \u0443\u0440\u043E\u0432\u0435\u043D\u044C " + (r.level + 1)) : ("\u041D\u0435 \u0432\u044B\u0448\u043B\u043E: " + ((r && r.reason) || "?")),
-                    r && r.ok ? T.ok : T.bad);
-                self.refresh();
-            }, this, Object.assign({}, afford2 ? gold : grey));
         } else {
-            this.content.add(txt(g, x + w - 71, y + 29, "\u041C\u0410\u041A\u0421\u0418\u041C\u0423\u041C", 11, T.ok, [.5, .5]));
+            if (a.price != null) {
+                var afford2 = money() >= a.price;
+                button(g, this.content, bx, y + 13, 134, 36, "\u0423\u041B\u0423\u0427\u0418\u0422\u042C", function () {
+                    var r = M.arsenal.upgrade(a.id);
+                    self.msg(r && r.ok ? (a.name + ": \u0443\u0440\u043E\u0432\u0435\u043D\u044C " + (r.level + 1)) : ("\u041D\u0435 \u0432\u044B\u0448\u043B\u043E: " + ((r && r.reason) || "?")),
+                        r && r.ok ? T.ok : T.bad);
+                    self.refresh();
+                }, this, Object.assign({}, afford2 ? gold : grey));
+            } else {
+                this.content.add(txt(g, bx + 67, y + 31, "\u041C\u0410\u041A\u0421\u0418\u041C\u0423\u041C", 12, T.ok, [.5, .5]));
+            }
+            if (a.ammoPrice) {
+                var canAmmo = money() >= a.ammoPrice;
+                var ab = button(g, this.content, bx, y + h - 46, 134, 36, "\u041F\u0410\u0422\u0420\u041E\u041D\u042B", function () {
+                    var r = M.arsenal.buyAmmo(a.id);
+                    self.msg(r && r.ok ? ("\u041F\u0430\u0442\u0440\u043E\u043D\u044B: " + r.ammo + " / " + r.max) : ("\u041D\u0435 \u0432\u044B\u0448\u043B\u043E: " + ((r && r.reason) || "?")),
+                        r && r.ok ? T.ok : T.bad);
+                    self.refresh();
+                }, this, Object.assign({}, canAmmo ? gold : grey));
+                ab.__base = "\u041F\u0410\u0422\u0420\u041E\u041D\u042B";
+            }
+            /* у стволов с бесконечным боезапасом кнопки «патроны» нет — и подписи тоже */
         }
     };
 
@@ -1146,7 +1213,7 @@
         var g = lvl.game;
         if (!g || !g.add || !g.make) return;
 
-        var ui = lvl.__at2ui = { slots: [], items: [], w: 0, h: 0 };
+        var ui = lvl.__at2ui = { slots: [], slotsIdle: [], items: [], w: 0, h: 0 };
         var layer = g.add.group(g.stage);
         lvl.__at2layer = layer;
 
@@ -1219,7 +1286,7 @@
         ui.panel = ui.panG;
 
         /* подсказка снизу */
-        ui.tip = txt(g, 14, 0, "M — панель мода   ·   правый Shift — чит-меню", 11, T.dim);
+        ui.tip = txt(g, 14, 0, "M \u2014 \u043F\u0430\u043D\u0435\u043B\u044C \u043C\u043E\u0434\u0430   \u00B7   \u043F\u0440\u0430\u0432\u044B\u0439 Shift \u2014 \u0447\u0438\u0442\u044B", 10, T.dim);
         layer.add(ui.tip);
 
         layoutBattle(lvl);
@@ -1299,7 +1366,9 @@
             ui.close.label.position.set(px0 + pw - 26, py0 + 22);
             ui.close.hit.position.set(px0 + pw - 40, py0 + 10);
         }
-        if (ui.tip) ui.tip.position.set(14, h - 22);
+        /* подсказку держим сверху, под счётчиком ядер: внизу её перекрывала
+           родная панель игры */
+        if (ui.tip) ui.tip.position.set(14, 52);
     }
 
     function tickBattle(lvl) {
@@ -1326,6 +1395,21 @@
                 });
             }
         }
+        /* какой ствол сейчас в руках — подсветка кнопок Z X C V B N */
+        try {
+            var cur = currentWeaponIndex(lvl);
+            for (var si = 0; si < ui.slots.length; si++) {
+                var sb = ui.slots[si], mine = (si === cur);
+                if (mine !== !!sb.__mine) {
+                    sb.__mine = mine;
+                    if (sb.setColours) sb.setColours(mine
+                        ? { fill: P.gold, color: T.dark, dark: P.goldDark, edge: 0x6b4b00, top: P.goldSoft }
+                        : { fill: P.tileEdge, color: T.white, dark: 0x05230f, edge: 0x05230f, top: P.tileTop });
+                    else if (sb.setAlpha) sb.setAlpha(mine ? 1 : .85);
+                }
+            }
+        } catch (e) { }
+
         if (ui.panel && ui.panel.visible) {
             ui._t = (ui._t || 0) + (g.time.physicsElapsed || 0);
             if (ui._t >= .25) { ui._t = 0; refreshPanel(lvl); }
@@ -1373,6 +1457,15 @@
         return str.slice(0, chars);
     }
 
+    /* Индекс текущего ствола игрока, если это ствол 2.0 (иначе -1). */
+    function currentWeaponIndex(lvl) {
+        var p = lvl && lvl.player;
+        if (!p || !p.weapons || !M.arsenal) return -1;
+        var first = M.arsenal.firstIndex;
+        for (var i = first; i < first + 6; i++) if (p.weapons[i] && p.weapons[i] === p.weapon) return i - first;
+        return -1;
+    }
+
     function refreshPanel(lvl) {
         var ui = lvl.__at2ui;
         if (!ui || !ui.panRows) return;
@@ -1380,23 +1473,23 @@
         var ars = (M.arsenal && M.arsenal.list()) || [];
 
         var feed = {
-            money: [padTo("ЯДРА \u25c8 " + cores(), 22), padTo("ДЕНЬГИ $ " + moneyFmt(money()), 22)],
-            act: [], pas: [], gun: []
+            money: [padTo("ЯДРА \u25c8 " + cores(), 44), "ДЕНЬГИ $ " + moneyFmt(money())],
+            act: [], actCd: [], pas: [], gun: []
         };
         mods.forEach(function (m) {
             if (!m.owned) return;
             if (m.kind === "active") {
                 var ready = !m.cooldown;
                 var st = ready ? "ГОТОВ" : "КД " + m.cooldown + " С";
-                feed.act.push({ text: padTo((m.key || "-") + " " + m.name, 22 - st.length) + st,
-                                colour: ready ? T.white : T.dim });
+                feed.act.push({ text: (m.key || "-") + " " + m.name, colour: ready ? T.white : T.dim });
+                feed.actCd.push({ text: st, colour: ready ? T.ok : T.dim });
             } else {
-                feed.pas.push({ text: padTo(m.name, 22), colour: T.white });
+                feed.pas.push({ text: m.name, colour: T.white });
             }
         });
         ars.forEach(function (a) {
             if (!a.owned) return;
-            feed.gun.push({ text: padTo(a.key + " " + a.name, 22), colour: T.white });
+            feed.gun.push({ text: a.key + " " + a.name, colour: T.white });
         });
 
         var lines = [];
@@ -1405,8 +1498,11 @@
             if (!t) return;
             if (spec.role === "money") { t.setText(feed.money[spec.slot], T.white); lines.push(feed.money[spec.slot]); return; }
             if (spec.role === "note") { t.setText(spec.text, T.dim); lines.push(spec.text); return; }
-            var arr = feed[spec.sec] || [];
-            var it = arr[spec.slot];
+            /* правая колонка активных модов — их состояние (готов / перезарядка) */
+            var arr, slot = spec.slot;
+            if (spec.sec === "act" && slot >= 5) { arr = feed.actCd; slot = slot - 5; }
+            else arr = feed[spec.sec] || [];
+            var it = arr[slot];
             if (it) { t.setText(it.text, it.colour); lines.push(it.text); }
             else { t.setText("", T.dim); }
         });
@@ -1428,9 +1524,9 @@
     function flash(lvl, str, color) {
         try {
             var g = lvl.game;
-            var t = txt(g, 22, 52, str, 17, color || T.gold);
+            var t = txt(g, 22, 52, str, 12, color || T.gold);
             lvl.__at2layer.add(t);
-            var tw = g.add.tween(t.position).to({ y: 84 }, 900, Phaser.Easing.Cubic.Out, true);
+            var tw = g.add.tween(t.position).to({ y: 84 }, 1100, Phaser.Easing.Cubic.Out, true);
             tw.onComplete.add(function () { try { t.destroy(); } catch (e) { } });
         } catch (e) { }
     }
@@ -1440,7 +1536,7 @@
     M.registerPack({
         id: "at2-ui",
         name: "Awesome Tanks 2.0 — интерфейс",
-        version: "4.1.0",
+        version: "4.2.0",
         onReady: function () {
             var done = false;
             var setup = function () {

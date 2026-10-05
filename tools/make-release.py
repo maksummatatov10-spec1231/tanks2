@@ -22,7 +22,7 @@ import zipfile
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 DIST = os.path.join(ROOT, "release")
 NAME = "awesome-tanks-2.0"
-VERSION = "2.0.5"
+VERSION = "2.0.6"
 
 KIT_DIRS = ["mods", "tools"]
 KIT_FILES = ["start.py", "README.md", "PUBLISHING.md", "ANALYSIS.md", "LICENSE"]

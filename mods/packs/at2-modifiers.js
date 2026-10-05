@@ -132,6 +132,22 @@
         try { var lvl = levelNow(); if (lvl && lvl.hud) lvl.hud.healthVial.updateProgress(p.health / p.maxHealth, 5); } catch (e) { }
     }
 
+    /* Снять «призрачную» неуязвимость, когда истекут её 1.5 с.
+       Раньше проверка была одна и при активном щите/ноуклипе флаг invincible
+       оставался включённым навсегда — игрок становился бессмертным молча. */
+    function armGhostOff(lvl, p) {
+        p.__at2ghostUntil = Date.now() + 1500;
+        if (p.__at2ghostTick) return;
+        p.__at2ghostTick = lvl.game.time.events.loop(250, function () {
+            var now = Date.now();
+            if (now < p.__at2ghostUntil) return;
+            if (p.__at2shield || p.__at2noclip) return;      // их неуязвимость своя — проверим позже
+            p.invincible = false;
+            try { lvl.game.time.events.remove(p.__at2ghostTick); } catch (e) { }
+            p.__at2ghostTick = null;
+        });
+    }
+
     function enemiesIn(lvl, x, y, r) {
         var out = [], list = (lvl && lvl.enemies) ? lvl.enemies : [];
         for (var i = 0; i < list.length; i++) {
@@ -220,6 +236,7 @@
         dash: {
             run: function (lvl, p) {
                 bump(p, "moveSpeed", 3, 0.25);
+                p.__at2dashUntil = Date.now() + 250;
                 try {
                     lvl.spawnSmoke(p.bodyX, p.bodyY, 6);
                     lvl.shakeCamera(3);
@@ -232,6 +249,7 @@
         shield: {
             run: function (lvl, p) {
                 p.__at2shield = (p.__at2shield || 0) + 1;
+                p.__at2shieldHp = p.health;      // это здоровье и держим, пока щит активен
                 p.invincible = true;
                 guardDamage(p);
                 /* Держим здоровье: одного флага invincible мало — взрывы, огонь и
@@ -291,6 +309,11 @@
             run: function (lvl, p) {
                 var mp = lvl.input.mousePointer, x = mp.worldX, y = mp.worldY;
                 if (!x && !y) { toast("Нужен курсор", "#ffd27f"); return false; }
+                /* держим цель внутри карты: иначе блинк уносил танк за её пределы */
+                var T = window.AT.SETTINGS.TILE_SIZE || 52;
+                var maxX = ((lvl.width || 40) - 1) * T, maxY = ((lvl.height || 40) - 1) * T;
+                x = Math.max(T, Math.min(maxX, x));
+                y = Math.max(T, Math.min(maxY, y));
                 if (playerFilterHit(lvl, p.body.x, p.body.y, x, y)) { toast("Путь перекрыт", "#ffb0b0"); return false; }
                 try {
                     lvl.spawnSmoke(p.bodyX, p.bodyY, 8);
@@ -426,7 +449,7 @@
         if (owns("ghost")) {
             if (p.__at2lastHealth != null && p.health < p.__at2lastHealth) {
                 p.invincible = true;
-                lvl.game.time.events.add(1500, function () { if (!p.__at2shield && !p.__at2noclip) p.invincible = false; });
+                armGhostOff(lvl, p);
                 toast("Призрак: 1.5 с неуязвимости", "#c9a0ff");
             }
             p.__at2lastHealth = p.health;
@@ -489,7 +512,7 @@
     M.registerPack({
         id: "at2-modifiers",
         name: "Awesome Tanks 2.0 — модификаторы",
-        version: "3.1.0",
+        version: "3.2.0",
 
         onReady: function () {
             var g = window.AT.game;

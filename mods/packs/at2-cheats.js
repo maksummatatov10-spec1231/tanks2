@@ -23,7 +23,7 @@
     var M = window.MOD;
     if (!M) { console.warn("[at2-cheats] нужен mod-loader.js"); return; }
 
-    var VERSION = "2.0.5";
+    var VERSION = "2.0.6";
     var PREFIX = "at2-cheats";
     var FONT = "Gunplay, 'Trebuchet MS', Arial, sans-serif";
 
@@ -145,8 +145,14 @@
             var p = st && st.player;
             if (!p || !p.__at2shield) { clearInterval(shieldLock); shieldLock = null; return; }
             p.invincible = true;
-            if (p.health < p.maxHealth) p.health = p.maxHealth;
-        }, 150);
+            /* Возвращаем здоровье, которое было при включении щита: так щит
+               реально «держит» урон, но не лечит то, что было потеряно раньше. */
+            var pin = (p.__at2shieldHp == null) ? p.maxHealth : p.__at2shieldHp;
+            if (p.health !== pin) {
+                p.health = pin;
+                try { st.hud && st.hud.healthVial && st.hud.healthVial.updateProgress(p.health / p.maxHealth, 5); } catch (e) { }
+            }
+        }, 120);
     }
     M.lockShield = lockShield;
 
