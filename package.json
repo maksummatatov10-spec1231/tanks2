@@ -1,0 +1,23 @@
+{
+  "name": "at2-modkit",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Unofficial mod kit for Awesome Tanks 2 (HTML5). Contains no game files: only own code and own level designs.",
+  "license": "MIT",
+  "scripts": {
+    "test": "node tools/test-modkit.js && bash tools/test-installer.sh",
+    "install-mod": "node tools/at2-mod-installer.js",
+    "uninstall-mod": "node tools/at2-mod-installer.js --uninstall",
+    "serve": "python3 -m http.server 8080"
+  },
+  "devDependencies": {
+    "jsdom": "^24.0.0"
+  },
+  "keywords": [
+    "awesome-tanks-2",
+    "mod",
+    "phaser",
+    "userscript",
+    "unofficial"
+  ]
+}

@@ -1,0 +1,47 @@
+<!doctype html>
+<!-- AT2MOD-GENERATED -->
+<!--
+  Шаблон страницы запуска, который установщик кита (tools/at2-mod-installer.js)
+  кладёт в папку игры, если index.html отсутствует.
+
+  Это самостоятельная, «чистая» обёртка: без рекламных SDK, аналитики и логотипов
+  сторонних порталов. В ней нет ни строки оригинальной вёрстки — только то, что
+  игра ожидает от страницы-хоста (объект AT, webfont-конфиг, заглушки вызовов).
+
+  Блок с мод-китом установщик вставляет сам, между маркерами AT2MOD.
+-->
+<html lang="ru">
+
+<head>
+  <meta charset="UTF-8">
+  <title>Awesome Tanks 2 (локальный запуск)</title>
+  <meta name="viewport"
+    content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, shrink-to-fit=no">
+  <meta name="robots" content="noindex">
+  <link href="styles/main.css" rel="stylesheet">
+  <link href="styles/fonts.css" rel="stylesheet">
+</head>
+
+<body style="overflow:hidden;margin:0;padding:0">
+  <p style="font-family:'Gunplay';position:absolute;pointer-events:none;opacity:0">Font loader</p>
+
+  <script>
+    // Данные, которые игра ожидает найти на странице.
+    var AT = { SITE_LOCK_TARGET: '' };
+
+    var WebFontConfig = {
+      classes: false,
+      timeout: 0,
+      active: function () { },
+      custom: { families: ['Gunplay'], urls: ['styles/fonts.css'] }
+    };
+
+    // Заглушки внешних вызовов игры (реклама/аналитика в чистой сборке не нужны).
+    window.showBanner = function () { };
+    window.cmgGameEvent = function () { };
+  </script>
+
+  <script src="awesome_tanks_2.js"></script>
+</body>
+
+</html>

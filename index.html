@@ -1,0 +1,70 @@
+<!doctype html>
+<!--
+  Локальный запуск Awesome Tanks 2.0 (мод-кит).
+
+  Это НЕ оригинальный файл (оригинал сохранён рядом под именем «(index)»).
+  Отличия от оригинала:
+    * убран <base href>, все пути считаются от корня этой папки;
+    * не подключаются coolmath-скрипты и рекламный SDK (sdk.js / igroutka);
+    * showBanner() и cmgGameEvent() — заглушки, чтобы врезки рекламы ничего не делали;
+    * перед игрой грузятся mods/mod-loader.js и паки 2.0 (см. ниже).
+
+  Порядок важен: сначала ядро, потом паки, в конце — сама игра.
+  Ядро перехватывает AT.SETTINGS и AT.LEVELS, поэтому паки успевают
+  дополнить их до того, как игра построит свои экраны и уровни.
+
+  Запускать только через http-сервер (file:// не сработает — игра грузит
+  атласы через XHR):  python3 -m http.server 8080
+-->
+<html lang="ru">
+
+<head>
+  <meta charset="UTF-8">
+  <title>Awesome Tanks 2.0</title>
+  <meta name="HandheldFriendly" content="true">
+  <meta name="viewport"
+    content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, shrink-to-fit=no">
+  <meta name="apple-mobile-web-app-title" content="Awesome Tanks 2">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <link href="styles/main.css" rel="stylesheet">
+  <link href="styles/fonts.css" rel="stylesheet">
+</head>
+
+<body>
+  <p style="font-family: 'Gunplay'; position: absolute; pointer-events: none; opacity: 0">Font loader</p>
+
+  <script>
+    // Обвязка, которую игра ожидает от страницы-хоста.
+    var AT = {
+      SITE_LOCK_TARGET: ''   // заглушка экрана блокировки (он всё равно недостижим, см. ANALYSIS.md)
+    };
+
+    var WebFontConfig = {
+      classes: false,
+      timeout: 0,
+      active: function () { },
+      custom: {
+        families: ['Gunplay'],
+        urls: ['styles/fonts.css']
+      }
+    };
+
+    // Игра вызывает эти функции как глобальные. Здесь — пустышки.
+    window.showBanner = function () { };
+    window.cmgGameEvent = function () { };
+  </script>
+
+  <!-- 1. Ядро мод-кита: перехват данных игры, реестры, вторая валюта, команды MOD.* -->
+  <script src="mods/mod-loader.js?v=2.0.6"></script>                                    <!-- движок мод-кита -->
+  <script src="mods/packs/at2-core.js?v=2.0.6"></script>                                <!-- ядра, экономика, уведомления -->
+  <script src="mods/packs/at2-campaign.js?v=2.0.6"></script>                            <!-- +15 новых карт к ванильным 15 -->
+  <script src="mods/packs/at2-weapons.js?v=2.0.6"></script>                             <!-- 6 новых стволов (Z X C V B N) -->
+  <script src="mods/packs/at2-modifiers.js?v=2.0.6"></script>                           <!-- 20 модификаторов за ядра -->
+  <script src="mods/packs/at2-ui.js?v=2.0.6"></script>                                  <!-- хаб-меню 2.0 и панель в бою -->
+  <script src="mods/packs/at2-cheats.js?v=2.0.6"></script>                              <!-- чит-меню (правый Shift) -->
+
+  <!-- 3. Сама игра. Ни один её файл этот репозиторий не распространяет. -->
+  <script src="awesome_tanks_2.js"></script>
+</body>
+
+</html>
