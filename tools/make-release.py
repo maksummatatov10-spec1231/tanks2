@@ -240,7 +240,10 @@ def main():
 
     log("  · файлов: %d, размер %.1f МБ" % (count, total / 1048576.0))
     log("  · архив:  %s (%.1f МБ)" % (zip_path, os.path.getsize(zip_path) / 1048576.0))
-    log("  · sha256: " + sha256(zip_path)[:32] + "…")
+    digest = sha256(zip_path)
+    with open(zip_path + ".sha256", "w", encoding="utf-8") as fh:
+        fh.write(digest + "  " + os.path.basename(zip_path) + "\n")
+    log("  · sha256: " + digest[:32] + "…  (записано в " + os.path.basename(zip_path) + ".sha256)")
 
     if args.with_game:
         log("")
